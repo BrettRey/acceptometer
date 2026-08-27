@@ -6,9 +6,12 @@
 //                   each cell with its own bias, slope, nuisance loadings, noise
 //
 // Scale convention: theta is in human-logit units. The human-arm discrimination
-// is fixed at 1 and the within-family item sd is fixed at 1; construction-family
-// means are sum-to-zero, so the cutpoints absorb overall location. Instrument
-// slopes beta are therefore "standardized score units per human logit".
+// is fixed at 1, so the ordered-logistic error's fixed variance anchors the
+// latent scale and the within-family item sd (tau_item) is a free parameter;
+// construction-family means are sum-to-zero, so the cutpoints absorb overall
+// location. Instrument slopes beta are "standardized score units per human
+// logit". (An earlier version fixed tau_item at 1; the pilot PPC showed that
+// compresses real between-item spread and inflates within-item noise.)
 data {
   int<lower=0, upper=1> prior_only;
 
@@ -45,6 +48,7 @@ parameters {
   // latent acceptability
   sum_to_zero_vector[N_constr] mu_c_raw;
   real<lower=0> tau_constr;
+  real<lower=0> tau_item;
   vector[N_item] z_item;
 
   // human arm
@@ -75,7 +79,7 @@ parameters {
 }
 transformed parameters {
   vector[N_constr] mu_c = tau_constr * mu_c_raw;
-  vector[N_item] theta = mu_c[constr] + z_item;   // within-family sd fixed at 1
+  vector[N_item] theta = mu_c[constr] + tau_item * z_item;
   vector[N_part] u = sigma_u * u_raw;
   matrix[M_c, N_constr] a_dev = diag_pre_multiply(tau_a, a_dev_raw);
   matrix[M_c, N_constr] b_dev = diag_pre_multiply(tau_b, b_dev_raw);
@@ -84,6 +88,7 @@ model {
   // priors (weakly informative throughout; no flat priors)
   mu_c_raw ~ normal(0, 1);
   tau_constr ~ normal(0, 1);
+  tau_item ~ normal(0, 1.5);
   z_item ~ std_normal();
   kappa ~ normal(0, 2);
   u_raw ~ std_normal();

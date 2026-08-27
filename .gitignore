@@ -10,3 +10,5 @@ runs/
 # compiled Stan binaries
 src/acceptometer/model/acceptometer
 src/acceptometer/model/*.hpp
+# Sprouse LS data: "contact Jon Sprouse for novel research" — not for public redistribution
+data/human_ratings.csv

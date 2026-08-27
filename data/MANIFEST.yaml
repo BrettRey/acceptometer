@@ -1,0 +1,336 @@
+# Data provenance manifest
+# Every file under data/raw/ is listed here with url, access date, sha256,
+# license (as stated by the source, or "not stated"), description, and
+# permitted-use notes. Nothing in data/raw/ was typed by hand; every file was
+# downloaded from the URL given. The search_log section records every query
+# run while locating these sources, including dead ends.
+
+generated: 2026-08-27
+generated_by: "Claude Code agent session (data acquisition task)"
+
+datasets:
+
+  morcela:
+    paper: >
+      Tjuatja, Neubig, Linzen & Hao (2025). "What Goes Into a LM Acceptability
+      Judgment? Rethinking the Impact of Frequency and Length." NAACL 2025.
+      https://aclanthology.org/2025.naacl-long.109/ / arXiv:2411.02528
+    repo: https://github.com/lindiatjuatja/morcela
+    repo_created: "2024-10-24"
+    latest_commit_at_access: a44fd7b6090b8305467ae731daa66abf2bcdf5b6
+    license: >
+      not stated. No LICENSE file in the repo; GitHub API reports license:
+      null; the README makes no license statement. The human ratings in the
+      CSV are derived from Sprouse, Schütze & Almeida (2013), whose own terms
+      (see sprouse-li below) therefore also apply.
+    human_data_content: >
+      ITEM-LEVEL MEANS ONLY, not per-participant. The single data CSV holds
+      725 bad/good sentence pairs = 1,450 sentences (matches the paper's
+      reported 1,450), with columns: Bad ID, Good ID, Bad Sentence, Good
+      Sentence, Bad Sentence Gold Judgment, and per-sentence mean z-scored
+      Likert-scale (LS) and magnitude-estimation (ME) scores plus a
+      forced-choice (FC) mean. Verified: the LS values equal the per-item
+      means of the z-scored per-participant Likert ratings in the Sprouse et
+      al. (2013) release to 6 decimal places (checked items
+      32.1.martin.20a.*.01, 32.1.martin.20a.g.01, 32.3.fanselow.28b.*.05,
+      32.3.fanselow.28b.g.05). Raw 1-7 ratings are NOT in this repo; they are
+      in the sprouse-li release below. All 1,450 item IDs match items in the
+      Sprouse et al. LS results after case-folding (MORCELA lowercases author
+      names, e.g. "culicover" vs "Culicover").
+    files:
+      - path: data/raw/morcela/linguistic_inquiry_data.csv
+        url: https://raw.githubusercontent.com/lindiatjuatja/morcela/main/data/linguistic_inquiry_data.csv
+        access_date: 2026-08-27
+        sha256: 67fd46140206ad6ba532c496645a7b56bde0684d37fe696be8a2fd9bf8185130
+        license: not stated (see dataset-level note)
+        description: >
+          725 minimal pairs (1,450 sentences) from the Sprouse, Schütze &
+          Almeida (2013) Linguistic Inquiry random sample, with sentence text
+          and item-level mean human scores (z-scored LS and ME; FC proportion).
+        may_be_used_for: >
+          Cross-checking, and as an id-to-sentence-text mapping. Because no
+          license is stated and the underlying ratings carry the Sprouse
+          release's contact-for-novel-research request, treat as
+          verification/reference material; contact the authors before
+          publication-grade novel reuse.
+      - path: data/raw/morcela/README.md
+        url: https://raw.githubusercontent.com/lindiatjuatja/morcela/main/README.md
+        access_date: 2026-08-27
+        sha256: 6251bad7383442163249249b9a256dd9128d8a584d68640df9c1cb555156a9de
+        license: not stated
+        description: Repo README documenting the data file and reproduction scripts.
+        may_be_used_for: Documentation/provenance.
+
+  sprouse-li:
+    paper: >
+      Sprouse, Jon, Carson T. Schütze & Diogo Almeida (2013). "A comparison of
+      informal and formal acceptability judgments using a random sample from
+      Linguistic Inquiry 2001-2010." Lingua 134: 219-248.
+    source_page: https://www.jonsprouse.com/research.html
+    license: >
+      not stated as a formal license. Publicly posted on the first author's
+      website. Each results CSV carries this header, quoted verbatim:
+      "This data is provided in the spirit of open science so that other
+      researchers can verify the analyses." and "Please contact Jon Sprouse if
+      you would like to discuss the possibility of using this data set for
+      novel research."
+    usage_flag: >
+      IMPORTANT: the stated terms permit verification of the published
+      analyses; NOVEL research use is asked to be discussed with Jon Sprouse
+      first. Before publishing anything built on these ratings, contact
+      Jon Sprouse.
+    human_data_content: >
+      PARTICIPANT-LEVEL RAW DATA for all three tasks. LS (7-point Likert):
+      30,400 rows = 304 participants x 100 items each, raw ratings 1-7 plus
+      per-participant z-scores; 2,384 items over 298 pairwise-condition codes.
+      ME (magnitude estimation): 30,400 rows, 304 participants, same items.
+      FC (two-alternative forced choice): 30,700 rows, 307 participants, 300
+      condition codes. Verified against the paper (p. 488 region, Section 3.2):
+      312 recruited per task, 8 removed from ME, 8 from LS, 5 from FC ->
+      expected 304/304/307, which is exactly what the files contain. Likert
+      ratings take only the values 1-7. Practice/anchor items (presentation
+      order 1-6) are excluded from the files by the authors.
+    known_quirks: >
+      (1) Header rows 1-5 of each results CSV are citation/usage comments;
+      read with skip=5. (2) Files are not UTF-8 ("Schütze" in the header is
+      legacy-encoded); read as latin-1 or mac-roman. (3) The conditions.csv
+      files use CR-only (old Mac) line endings. (4) For 19 of 298 LS condition
+      codes, the item-ID format in the results files does not exactly match
+      the ID in SSA.Materials.xlsx (e.g. results "32.2.nunes.3a.g" vs
+      materials "32.2.nunes.3a1.g"/"3a2.g"; results "32.3.Culicover.22b7.*"
+      vs materials "32.3.culicover.22b.*"), so 120 of 2,384 LS items cannot
+      be joined to sentence text without guessing; convert_human.py leaves
+      text empty for those rather than guess.
+    files:
+      - path: data/raw/sprouse-li/SSA.data.zip
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip"
+        access_date: 2026-08-27
+        sha256: a7fe6237ac970ded66fdb05ff2d2588feac5e51fedcf14acbf7d555e24291a43
+        license: not stated (see dataset-level terms)
+        description: >
+          Original zip as downloaded. Extracted in place to
+          data/raw/sprouse-li/SSA.data/ (macOS resource-fork cruft
+          __MACOSX/.DS_Store removed; no data files altered).
+        may_be_used_for: Verification of published analyses; contact Sprouse for novel research.
+      - path: data/raw/sprouse-li/SSA.data/LS experiment/LI.ls.results.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: a5291598928a0e0dee6dc38773b08639fe352c0f598655ada6b9d10b05ff7f77
+        license: see dataset-level terms
+        description: >
+          Per-participant 7-point Likert ratings. Columns: participant,
+          survey, order, judgment (raw 1-7), item, condition, zscores.
+          30,400 data rows, 304 participants.
+        may_be_used_for: Verification of published analyses; contact Sprouse for novel research.
+      - path: data/raw/sprouse-li/SSA.data/LS experiment/LI.conditions.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 712d3008df628e1b1a599f84e8cc7d711abc887965ce599882ff41729787c715
+        license: see dataset-level terms
+        description: Bad/good condition-code pairs forming each pairwise phenomenon (CR line endings).
+        may_be_used_for: Batch analysis bookkeeping.
+      - path: data/raw/sprouse-li/SSA.data/LS experiment/read.me.txt
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: bbfa3ae9fb91425c79b5d13874051448c5dfaed1f25e8e48c4fc5414a98b0d1d
+        license: see dataset-level terms
+        description: Authors' readme for the LS files.
+        may_be_used_for: Documentation.
+      - path: data/raw/sprouse-li/SSA.data/ME experiment/LI.me.results.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: e98b0df17832fbf6b3c4ed5b87918d5f12e29e846c6787244200740e87f27f5d
+        license: see dataset-level terms
+        description: >
+          Per-participant magnitude-estimation ratings (same column layout as
+          LS; judgment is the raw ME response). 30,400 data rows, 304 participants.
+        may_be_used_for: Verification of published analyses; contact Sprouse for novel research.
+      - path: data/raw/sprouse-li/SSA.data/ME experiment/LI.conditions.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 712d3008df628e1b1a599f84e8cc7d711abc887965ce599882ff41729787c715
+        license: see dataset-level terms
+        description: Identical to the LS conditions file (same sha256).
+        may_be_used_for: Batch analysis bookkeeping.
+      - path: data/raw/sprouse-li/SSA.data/ME experiment/read.me.txt
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 643ec73f0d220dcf1187ec5564894f553c2a25b9296cc1e924dfca6e3b155c90
+        license: see dataset-level terms
+        description: Authors' readme for the ME files.
+        may_be_used_for: Documentation.
+      - path: data/raw/sprouse-li/SSA.data/FC experiment/FC.logistic.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: a08d5517d2dbb5eb5ba1e71dcf874e0daaff18dccad964a8e21a902840f5e5f1
+        license: see dataset-level terms
+        description: >
+          Per-participant two-alternative forced-choice responses, logistic
+          format (judgment 1 = chose this item as more acceptable). 30,700
+          data rows, 307 participants.
+        may_be_used_for: Verification of published analyses; contact Sprouse for novel research.
+      - path: data/raw/sprouse-li/SSA.data/FC experiment/FC.signtest.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 325e42bc6852b1bc7561caeead04906c4c4f63273ffc9d536db92a40f0e29ef2
+        license: see dataset-level terms
+        description: Same FC responses in sign-test format (choice vs LI-expected choice).
+        may_be_used_for: Verification of published analyses; contact Sprouse for novel research.
+      - path: data/raw/sprouse-li/SSA.data/FC experiment/conditions.csv
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 1952072f926bff1e41ca0418290cdd0a171e1d5b9f80ceea9be89403e79f295a
+        license: see dataset-level terms
+        description: FC condition-code pairs (CR line endings).
+        may_be_used_for: Batch analysis bookkeeping.
+      - path: data/raw/sprouse-li/SSA.data/FC experiment/read.me.txt
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.data.zip (extracted)"
+        access_date: 2026-08-27
+        sha256: 47fc960df350055f0a5ead85860729317d82af82b4a685f41cacb482609a2a4f
+        license: see dataset-level terms
+        description: Authors' readme for the FC files.
+        may_be_used_for: Documentation.
+      - path: data/raw/sprouse-li/SSA.Materials.xlsx
+        url: "https://www.jonsprouse.com/data/Lingua2013/SSA.Materials.xlsx"
+        access_date: 2026-08-27
+        sha256: 8d95a41431ab1f17dc54dc47765ae936e7cdf1caf7d5d889a257051798aebb5c
+        license: see dataset-level terms
+        description: >
+          Materials spreadsheet: 2,400 item IDs (300 conditions x 8
+          lexicalizations) with full sentence text, bad/good pairing, and the
+          authors' notes on potential item problems.
+        may_be_used_for: Item-ID to sentence-text mapping; materials inspection.
+
+  blimp:
+    paper: >
+      Warstadt, Alex, Alicia Parrish, Haokun Liu, Anhad Mohananey, Wei Peng,
+      Sheng-Fu Wang & Samuel R. Bowman (2020). "BLiMP: The Benchmark of
+      Linguistic Minimal Pairs for English." TACL 8: 377-392.
+    repo: https://github.com/alexwarstadt/blimp
+    repo_created: "2019-11-29"
+    commit_pinned: 3e56b06fcabca9b30822fc66435fca6b1aa40bb1
+    license: >
+      CC-BY. The repo README states: "BLiMP is distributed under a CC-BY
+      license", linking to https://creativecommons.org/licenses/by/4.0/.
+      (GitHub's API license field is null because there is no LICENSE file;
+      the README statement is the source's own declaration.)
+    contamination_caveat: >
+      BLiMP has been public on GitHub since 2019-11-29 (paper published 2020)
+      and is mirrored widely (Hugging Face datasets, EleutherAI lm-eval
+      harness, many forks). It is therefore CONTAMINATION-SUSPECT for any
+      modern LLM: the test sentences are almost certainly in the pretraining
+      data of models trained on post-2020 web scrapes, and published
+      benchmark results on BLiMP circulate with the labels attached. Treat
+      LLM accuracy on these paradigms as an upper bound inflated by possible
+      memorization, not as a clean generalization measure.
+    human_data_note: >
+      These two files contain NO human ratings; the good/bad labels are
+      grammar-generated. (Aggregate human agreement with BLiMP labels is
+      96.4% per the README; the repo's raw_results/ holds human validation
+      responses, not downloaded here.)
+    files:
+      - path: data/raw/blimp/regular_plural_subject_verb_agreement_1.jsonl
+        url: https://raw.githubusercontent.com/alexwarstadt/blimp/3e56b06fcabca9b30822fc66435fca6b1aa40bb1/data/regular_plural_subject_verb_agreement_1.jsonl
+        access_date: 2026-08-27
+        sha256: 1a18d94062c8e792c0a200a3b00dff0e051a92bb084c05e9b5e5c73bee32a620
+        license: CC-BY (per repo README)
+        description: >
+          Agreement paradigm: 1,000 minimal pairs, field "morphology",
+          linguistics_term "subject_verb_agreement" (e.g. "Paula references
+          Robert." / "Paula reference Robert.").
+        may_be_used_for: >
+          Minimal-pair benchmark sample (any use with attribution, per
+          CC-BY), subject to the contamination caveat above.
+      - path: data/raw/blimp/wh_island.jsonl
+        url: https://raw.githubusercontent.com/alexwarstadt/blimp/3e56b06fcabca9b30822fc66435fca6b1aa40bb1/data/wh_island.jsonl
+        access_date: 2026-08-27
+        sha256: 77824ca8c0008fb7a204e785ca2dcee1b2803f666bb545bd95cb8a51e04f1a4c
+        license: CC-BY (per repo README)
+        description: >
+          Island paradigm: 1,000 minimal pairs, field "syntax",
+          linguistics_term "island_effects" (e.g. "Who have those men
+          revealed they helped?" / "Who have those men revealed who helped?").
+        may_be_used_for: >
+          Minimal-pair benchmark sample (any use with attribution, per
+          CC-BY), subject to the contamination caveat above.
+      - path: data/raw/blimp/BLIMP_COMMIT_SHA.txt
+        url: https://api.github.com/repos/alexwarstadt/blimp/commits/master
+        access_date: 2026-08-27
+        sha256: 25405ec8553e4b70dcaed5b34ffd5b0f0c37b99f406eecb7909399d71f59a53d
+        license: n/a (provenance record written by this session)
+        description: The master-branch commit SHA the two jsonl files were fetched at.
+        may_be_used_for: Provenance.
+
+derived_files:
+  - path: data/human_ratings.csv
+    produced_by: data/convert_human.py
+    source: data/raw/sprouse-li/SSA.data/LS experiment/LI.ls.results.csv (+ text join from SSA.Materials.xlsx, MORCELA CSV fallback)
+    description: >
+      Long-format participant-level 7-point Likert ratings: one row per
+      (participant, item) judgment. 30,338 rows (62 source rows with a blank
+      judgment dropped), 304 participants, 2,384 items, 298 constructions.
+      construction = the source's pairwise condition code; no labels were
+      invented. text is blank for 120 items whose results-file ID matches
+      neither text source (see known_quirks). Inherits the sprouse-li usage
+      terms (verification use; contact Sprouse for novel research).
+
+search_log:
+  # Every query run during acquisition, where it was run, and what it returned.
+  - query: "MORCELA Tjuatja Linzen acceptability judgment GitHub code data release"
+    where: WebSearch
+    result: >
+      FOUND. Top results included https://github.com/lindiatjuatja/morcela
+      (the code/data release), the ACL Anthology page
+      (aclanthology.org/2025.naacl-long.109/), and arXiv:2411.02528.
+  - query: "GET api.github.com/repos/lindiatjuatja/morcela and /git/trees/main?recursive=1"
+    where: GitHub REST API via curl
+    result: >
+      Repo metadata (license: null) and full file tree; the only data file is
+      data/linguistic_inquiry_data.csv (171,312 bytes) plus
+      pile_unigram_logprobs.json and src/ scripts. No LICENSE file, no
+      per-participant human data.
+  - query: "GET raw.githubusercontent.com/lindiatjuatja/morcela/main/README.md"
+    where: curl
+    result: >
+      README confirms the human materials are "from the Linguistic Inquiry
+      data collected by Sprouse et al. (2013)"; no license statement.
+  - query: "Sprouse Schütze Almeida 2013 Linguistic Inquiry judgment data download site \"jonsprouse.com\" OR OSF materials data"
+    where: WebSearch
+    result: >
+      FOUND. Results included https://www.jonsprouse.com/research.html (papers
+      page with data links) and the paper PDF at
+      jonsprouse.com/papers/Sprouse%20et%20al.%202013.pdf. No OSF deposit for
+      this dataset surfaced in the results; the author-site copy was used.
+  - query: "GET https://www.jonsprouse.com/research.html, grep hrefs for data|material|2013|zip|osf"
+    where: curl + grep
+    result: >
+      FOUND direct links data/Lingua2013/SSA.data.zip and
+      data/Lingua2013/SSA.Materials.xlsx (also data links for other Sprouse
+      papers, not downloaded).
+  - query: "WebFetch https://www.jonsprouse.com/papers/Sprouse%20et%20al.%202013.pdf (participant counts)"
+    where: WebFetch
+    result: >
+      PARTIAL FAILURE: fetch returned raw PDF binary the summarizer could not
+      read; the PDF was saved locally and extracted with pdftotext instead,
+      which yielded the numbers used for verification (312 recruited per
+      task; 8 ME / 8 LS / 5 FC removed; 300 conditions sampled from LI
+      2001-2010; 8 lexicalizations per condition; 148 pairwise phenomena in
+      final analyses).
+  - query: "GET api.github.com/repos/alexwarstadt/blimp and /contents/data and /contents/"
+    where: GitHub REST API via curl
+    result: >
+      Repo exists (created 2019-11-29), license field null, no LICENSE file
+      in root; data/ lists 67 paradigm jsonl files including 16 agreement
+      and 6 island paradigms.
+  - query: "GET raw.githubusercontent.com/alexwarstadt/blimp/master/README.md, grep -i license"
+    where: curl + grep
+    result: >
+      FOUND license statement: "BLiMP is distributed under a CC-BY license"
+      (links to CC-BY 4.0). Also documents the 67 x 1000-pair structure and
+      96.4% aggregate human agreement.
+  - query: "GET api.github.com/repos/alexwarstadt/blimp/commits/master (pin SHA), then raw files at that SHA"
+    where: GitHub REST API + curl
+    result: >
+      Pinned 3e56b06fcabca9b30822fc66435fca6b1aa40bb1; downloaded
+      regular_plural_subject_verb_agreement_1.jsonl and wh_island.jsonl
+      (1,000 lines each, verified by wc -l and content inspection).

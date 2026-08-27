@@ -101,8 +101,8 @@ def build_stan_data(
 
 
 def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
-              iter_warmup: int = 750, iter_sampling: int = 750,
-              adapt_delta: float = 0.9, chains: int = 4):
+              iter_warmup: int = 1000, iter_sampling: int = 1000,
+              adapt_delta: float = 0.95, chains: int = 4):
     """Compile (cached), sample, and return (CmdStanMCMC, arviz.InferenceData)."""
     import arviz as az
     from cmdstanpy import CmdStanModel

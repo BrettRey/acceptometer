@@ -43,7 +43,25 @@ recorded agy fabrication risk; not retried, quota preserved.
 
 2026-08-27 — LOCO fits run at 1000/1000 iterations (vs 750/750 default fits)
 after a held-out-family fit showed marginal mixing (R-hat 1.013 > 1.01 gate).
-The gate stays; the iterations move.
+The gate stays; the iterations move. (Superseded later the same day: defaults
+raised to 1000/1000, adapt_delta 0.95, after the freed latent scale needed
+more adaptation.)
+
+2026-08-27 — Within-family item sd (tau_item) freed; scale anchored by the
+ordered-logistic error variance instead. Reason: first real-data PPC (Sprouse
+LI pilot, 120 items, 1,519 ratings) failed with observed between-item spread
+1.53 vs replicated 1.33 [1.25, 1.41] and observed within-item SD 1.44 vs
+replicated 1.63 [1.57, 1.68]: fixing the sd at 1 compressed the latent scale
+and forced ordinal noise to compensate. With tau_item free the data estimates
+it at ~2.0 and the PPC passes (ppp .73 / .54). Recovery and SBC re-run and
+green after the change. This is the PPC gate doing precisely what it was
+built for on first contact with real data.
+
+2026-08-27 — Pilot design: 120 Sprouse LI items (10 paper-families x 12,
+6 starred / 6 good), all 1,519 available LS ratings from 304 participants;
+construction family = source paper (volume.issue.author). Sprouse
+participant-level data and derived files stay out of git (header requests
+contacting Sprouse for novel research; redistribution unclear).
 
 2026-08-27 — ocx (glm-5.3-flash) adversarial review of DESIGN.md accepted in
 large part; model upgraded before any real-data fit. Changes: (a) family-level

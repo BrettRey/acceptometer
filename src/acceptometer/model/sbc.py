@@ -24,6 +24,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
     x = rng.normal(0, 1, n_constr)
     mu_c_raw = x - x.mean()                       # projected iid normal = sum_to_zero prior
     tau_constr = abs(rng.normal(0, 1))
+    tau_item = abs(rng.normal(0, 1.5))
     kappa = np.sort(rng.normal(0, 2, K - 1))      # order statistics of iid normals
     sigma_u = abs(rng.normal(0, 1))
     # sigma_s has a 0.05 floor in the model: rejection-sample the truncation
@@ -38,6 +39,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
     return dict(
         mu_c=tau_constr * mu_c_raw,
         tau_constr=tau_constr,
+        tau_item=tau_item,
         kappa=kappa,
         sigma_u=sigma_u,
         alpha=rng.normal(0, 1, M_c),
@@ -58,7 +60,7 @@ def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_ite
                     K, M_c, M_b, P):
     N = n_constr * items_per_constr
     constr = np.repeat(np.arange(1, n_constr + 1), items_per_constr)
-    theta = pr["mu_c"][constr - 1] + rng.normal(0, 1.0, N)
+    theta = pr["mu_c"][constr - 1] + rng.normal(0, pr["tau_item"], N)
     X = rng.normal(0, 1, (N, P))
 
     u = rng.normal(0, pr["sigma_u"], n_part)
@@ -106,7 +108,7 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
     uniformity p > 0.005 for every tracked parameter (loose Bonferroni; this is
     a smoke alarm, not a certificate)."""
     rng = np.random.default_rng(seed)
-    tracked = ["tau_constr", "sigma_u"] + \
+    tracked = ["tau_constr", "tau_item", "sigma_u"] + \
         [f"beta[{m}]" for m in range(1, M_c + 1)] + \
         [f"sigma_s[{m}]" for m in range(1, M_c + 1)]
     ranks: dict[str, list[int]] = {t: [] for t in tracked}

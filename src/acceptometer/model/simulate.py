@@ -51,6 +51,7 @@ def simulate(
     M_b: int = 2,
     P: int = 2,
     tau_constr: float = 0.8,
+    tau_item: float = 1.2,
     sigma_u: float = 0.5,
     seed: int = 20260827,
 ) -> tuple[dict, SimTruth]:
@@ -63,7 +64,7 @@ def simulate(
 
     mu_c = rng.normal(0, tau_constr, n_constr)
     mu_c -= mu_c.mean()  # sum-to-zero, as in the Stan parameterization
-    theta = mu_c[constr - 1] + rng.normal(0, 1.0, N)
+    theta = mu_c[constr - 1] + rng.normal(0, tau_item, N)
 
     X = rng.normal(0, 1, (N, P))  # covariates arrive centered/scaled
 
