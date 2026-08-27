@@ -34,6 +34,7 @@ TIERS = (
     "aggregate_estimation",
     "effect_reproduction",
     "distributional_claims",
+    "population_transfer",
     "individual_simulation",
     "mechanism_claims",
 )
@@ -205,6 +206,23 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         contamination = manifest["contamination"]
     else:
         contamination = "not assessed"
+    # contamination caps tiers: only an explicit clean assessment lifts the
+    # cap, because contamination inflates exactly the statistics the higher
+    # tiers rest on, and LOCO rewards it (the held-out family is public too)
+    contamination_clean = (
+        contamination == "clean"
+        or (isinstance(contamination, dict)
+            and contamination.get("status") == "clean"))
+
+    ppc = _read_json(run_dir / "ppc.json")
+    ppc_ok = bool(ppc and ppc.get("passed"))
+
+    # nonresponse: cells with a parse-failure rate above 10% cannot support
+    # tier grants (missingness plausibly correlates with theta)
+    nonresponse = (manifest or {}).get("nonresponse") if isinstance(manifest, dict) else None
+    flagged_cells = sorted(
+        c for c, r in (nonresponse or {}).items()
+        if isinstance(r, (int, float)) and r > 0.10)
 
     rank_corr = _loco_stat(loco, _RANK_TOP_KEYS, _RANK_FOLD_KEYS) if loco else None
     coverage = _loco_stat(loco, _COV_TOP_KEYS, _COV_FOLD_KEYS) if loco else None
@@ -213,10 +231,20 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         "diagnostics": diagnostics if diagnostics is not None else "not produced",
         "fake_data_recovery": recovery if recovery is not None else "not produced",
         "loco_transfer": loco if loco is not None else "not produced",
+        "ppc": ppc if ppc is not None else "not produced",
         "multiverse_spread": _multiverse_spread(run_dir),
         "prompt_invariance": invariance,
         "human_split_half": split_half,
         "contamination": contamination,
+        "instrument_nonresponse": (
+            nonresponse if nonresponse is not None else "not recorded"),
+        "flagged_cells": flagged_cells or "none",
+        "generalization_axes": {
+            "tested": ["construction_family (LOCO-CV, purposive family sample; "
+                       "descriptive over the families tested)"],
+            "untested": ["population", "register", "language", "item_source",
+                         "time", "model_version (beyond drift sentinels)"],
+        },
     }
 
     licensed: dict[str, str] = {}
@@ -257,25 +285,46 @@ def build_warrant(run_dir: str | Path, estimand: dict,
 
     if "ranking" not in licensed:
         refused["aggregate_estimation"] = "refused because ranking is not granted"
+    elif not contamination_clean:
+        refused["aggregate_estimation"] = (
+            "contamination cap: item source not explicitly assessed clean "
+            f"(status: {contamination if isinstance(contamination, str) else contamination.get('status', 'unknown')}); "
+            "contamination inflates exactly the statistics this tier rests on, "
+            "and LOCO rewards it")
+    elif ppc is not None and not ppc_ok:
+        refused["aggregate_estimation"] = (
+            "posterior predictive check failed; the human arm misfits the "
+            "criterion data, so aggregate predictions inherit unquantified bias")
     elif coverage is None:
         refused["aggregate_estimation"] = ("evidence not produced: loco.json "
                                            "carries no 90% interval coverage")
     elif 0.75 <= coverage <= 0.98:
         licensed["aggregate_estimation"] = (f"LOCO 90% interval coverage "
-                                            f"{coverage:.2f} within [0.75, 0.98]")
+                                            f"{coverage:.2f} within [0.75, 0.98], "
+                                            "contamination assessed clean"
+                                            + ("" if ppc is None else ", PPC passed"))
     else:
         refused["aggregate_estimation"] = (f"LOCO 90% interval coverage "
                                            f"{coverage:.2f} outside [0.75, 0.98]")
 
     refused["effect_reproduction"] = ("not yet tested: requires matched "
                                       "experimental contrasts")
-    refused["distributional_claims"] = ("no participant-level validation of "
-                                        "variance structure")
+    refused["distributional_claims"] = (
+        "no participant-level validation of variance structure"
+        + ("" if ppc is None or ppc_ok
+           else "; posterior predictive check on disagreement structure failed"))
+    refused["population_transfer"] = (
+        "refused: the v1 ladder contains no population-transfer test; the "
+        "estimand population defaults to the criterion sample's own")
     refused["individual_simulation"] = ("refused permanently: an item-level "
                                         "instrument licenses no individual-level "
                                         "human simulation")
     refused["mechanism_claims"] = ("refused permanently: the model estimates a "
                                    "linking function, not a mechanism")
+
+    if "population" not in estimand:
+        estimand["population"] = ("the criterion sample's population "
+                                  "(unspecified); population transfer untested")
 
     cert = _plain({
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
@@ -286,6 +335,13 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         "evidence": evidence,
         "licensed_claims": licensed,
         "refused_claims": refused,
+        "residual_risks": [
+            "shared pretraining bias: local instruments share web-scale "
+            "training data and can share construction-specific error; a tight "
+            "multiverse fan does not rule this out",
+            "conditional reliability is fit- and item-set-specific; it goes "
+            "stale when the item pool changes",
+        ],
     })
 
     out_path = Path(out_path) if out_path else run_dir / "warrant.yaml"
