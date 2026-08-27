@@ -1,0 +1,12 @@
+# raw AI-generated survey stays out of the public repo (see DECISIONS.md)
+llm-grammaticality-judgments-survey.md
+.venv/
+__pycache__/
+*.pyc
+data/raw/
+runs/
+*.csv.gz
+.DS_Store
+# compiled Stan binaries
+src/acceptometer/model/acceptometer
+src/acceptometer/model/*.hpp

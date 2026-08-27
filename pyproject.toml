@@ -1,0 +1,36 @@
+[project]
+name = "acceptometer"
+version = "0.1.0"
+description = "A warranted Bayesian measurement instrument for LLM acceptability judgments"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = { text = "MIT" }
+authors = [{ name = "Brett Reynolds" }]
+dependencies = [
+    "cmdstanpy>=1.2",
+    "arviz>=0.18",
+    "numpy>=1.26",
+    "pandas>=2.2",
+    "matplotlib>=3.8",
+    "wordfreq>=3.1",
+    "pyyaml>=6.0",
+    "click>=8.1",
+    "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+hf = ["torch>=2.3", "transformers>=4.44"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+acceptometer = "acceptometer.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/acceptometer"]
+
+[tool.pytest.ini_options]
+markers = ["slow: slower end-to-end tests"]

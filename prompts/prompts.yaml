@@ -1,0 +1,26 @@
+binary:
+  p1: |-
+    Would a native speaker of English find the following sentence acceptable?
+    Sentence: {sentence}
+    Answer with exactly one word: yes or no.
+  p2: |-
+    Is this sentence grammatical English?
+    Sentence: {sentence}
+    Answer with exactly one word: yes or no.
+  p3: |-
+    Does this sentence sound natural enough that an editor would leave it unflagged?
+    Sentence: {sentence}
+    Answer with exactly one word: yes or no.
+scalar:
+  p1: |-
+    How acceptable would the following sentence be to a native speaker of English, where 1 means completely unacceptable and 7 means completely acceptable?
+    Sentence: {sentence}
+    Answer with a single integer from 1 to 7.
+  p2: |-
+    Rate whether this is grammatical English, where 1 means clearly ungrammatical and 7 means clearly grammatical.
+    Sentence: {sentence}
+    Answer with a single integer from 1 to 7.
+  p3: |-
+    Rate how natural this sentence sounds, where 1 means an editor would certainly flag it and 7 means an editor would certainly leave it unflagged.
+    Sentence: {sentence}
+    Answer with a single integer from 1 to 7.
