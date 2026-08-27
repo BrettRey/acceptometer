@@ -63,6 +63,34 @@ construction family = source paper (volume.issue.author). Sprouse
 participant-level data and derived files stay out of git (header requests
 contacting Sprouse for novel research; redistribution unclear).
 
+2026-08-27 — Cells of one model+method enter the fit as ONE instrument.
+The first full pilot fit treated three scalar paraphrases (and three
+transforms of one Pythia forward pass) as independent witnesses; their
+correlated errors outvoted 1,519 human ratings (qwen "reliability" .93, PPC
+failure, posterior tension). Paraphrases and repeats are repeated
+measurements of one instrument; Pythia enters via SLOR only; binary cells
+stay descriptive in v1 (no-overdispersion Bernoulli is misspecified for
+near-deterministic repeats, b_b exploded to |11| under a N(0,1) prior).
+
+2026-08-27 — Reflection mode handled by data-informed initialization plus a
+zero-avoiding gamma(2,1) prior on tau_item. The joint posterior has a
+locally-stable mirror (slopes and latent orientation jointly flipped) that
+captured 1-in-4 randomly-initialized chains; escaping requires all thetas to
+cross the valley at once, which HMC will not do. Chains now start at the
+standardized human item means (basin selection, no posterior bias, no sign
+constraints anywhere; an anti-correlated instrument can still reach negative
+beta).
+
+2026-08-27 — Instrument-by-item error term (omega) added for replicated
+cells. Repeats average away draw noise but never the instrument's stable
+opinion about an item; without the term, replicated cells claim fictitious
+precision and drag theta off the human criterion (the PPC caught it).
+Identified only against replicate noise, so it is switched off for
+single-observation cells (redundant-ridge divergences otherwise). Effect on
+real data: qwen scalar conditional reliability .90 -> .54 with omega = .56;
+PPC now passes (ppp .86/.78). Recovery recovers omega to +-0.04; full ladder
+re-run green.
+
 2026-08-27 — ocx (glm-5.3-flash) adversarial review of DESIGN.md accepted in
 large part; model upgraded before any real-data fit. Changes: (a) family-level
 intercept/slope deviations in the continuous instrument arm (LLM error

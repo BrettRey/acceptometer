@@ -75,14 +75,17 @@ def build_stan_data(
                 mu, sd = vals[m].mean(), vals[m].std() or 1.0
                 vals[m] = (vals[m] - mu) / sd
                 maps["cell_standardization"][c] = {"mean": float(mu), "sd": float(sd)}
+        reps = cont.groupby(["cell_id", "item_id"]).size()
+        has_reps = [int(reps.xs(c, level="cell_id").max() > 1) for c in cells]
         data.update(
             N_c=len(cont), M_c=len(cells),
             item_c=[item_ix[i] for i in cont["item_id"]],
             cell_c=[cix[c] for c in cont["cell_id"]],
             s=vals.tolist(),
+            has_reps=has_reps,
         )
     else:
-        data.update(N_c=0, M_c=0, item_c=[], cell_c=[], s=[])
+        data.update(N_c=0, M_c=0, item_c=[], cell_c=[], s=[], has_reps=[0])
 
     if binary is not None and len(binary):
         cells = sorted(binary["cell_id"].unique())
@@ -100,9 +103,41 @@ def build_stan_data(
     return data, maps
 
 
+def _default_inits(data: dict) -> dict:
+    """Start chains in the identified basin. The joint posterior has a
+    spurious reflection mode (instrument slopes and latent orientation jointly
+    flipped) that is locally stable: escaping it requires every theta to cross
+    the likelihood valley at once, which HMC will not do. Random inits land
+    ~1-in-4 chains there. So initialize the latent items at the standardized
+    observed human item means (data-informed inits select a basin; they do not
+    bias the posterior), with modest positive slopes. A genuinely
+    anti-correlated instrument can still walk to negative beta."""
+    inits = {
+        "tau_constr": 0.5, "tau_item": 1.0, "sigma_u": 0.5,
+        "kappa": [float(k) for k in np.linspace(-2, 2, data["K"] - 1)],
+    }
+    if data.get("N_h", 0) > 0:
+        item_h = np.asarray(data["item_h"])
+        y = np.asarray(data["y"], dtype=float)
+        means = np.full(data["N_item"], y.mean())
+        for i in range(1, data["N_item"] + 1):
+            m = item_h == i
+            if m.any():
+                means[i - 1] = y[m].mean()
+        sd = means.std() or 1.0
+        inits["z_item"] = ((means - means.mean()) / sd).tolist()
+    if data.get("M_c", 0) > 0:
+        inits["beta"] = [0.3] * data["M_c"]
+        inits["sigma_s"] = [0.8] * data["M_c"]
+        inits["omega"] = [0.3] * data["M_c"]
+    if data.get("M_b", 0) > 0:
+        inits["b_b"] = [0.5] * data["M_b"]
+    return inits
+
+
 def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
               iter_warmup: int = 1000, iter_sampling: int = 1000,
-              adapt_delta: float = 0.95, chains: int = 4):
+              adapt_delta: float = 0.95, chains: int = 4, inits: dict | None = None):
     """Compile (cached), sample, and return (CmdStanMCMC, arviz.InferenceData)."""
     import arviz as az
     from cmdstanpy import CmdStanModel
@@ -112,6 +147,7 @@ def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
         data=data, chains=chains, parallel_chains=min(chains, 4),
         iter_warmup=iter_warmup, iter_sampling=iter_sampling,
         adapt_delta=adapt_delta, seed=seed, show_progress=False,
+        inits=inits if inits is not None else _default_inits(data),
         output_dir=str(out_dir) if out_dir else None,
     )
     idata = az.from_cmdstanpy(fit)

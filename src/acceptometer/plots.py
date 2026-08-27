@@ -125,13 +125,14 @@ def item_scatter(idata, maps: dict, human_item_means, path: str | Path) -> Path:
 
 def multiverse_fan(cont_df: pd.DataFrame, path: str | Path) -> Path:
     """Per-item spread of the elicitation multiverse. `cont_df` is tidy
-    (item_id, cell_id, value) with per-cell standardized scores; repeats
-    are averaged per (item, cell). Items on x sorted by cross-cell mean,
-    one line per cell, shaded band for the cross-cell range. A tight fan
-    means the multiverse agrees; a wide fan means the elicitation is the
-    result."""
+    (item_id, cell_id, value) on whatever raw scale each cell uses; repeats
+    are averaged per (item, cell) and scores are z-scored per cell here so
+    the fan is scale-free. Items on x sorted by cross-cell mean, one line
+    per cell, shaded band for the cross-cell range. A tight fan means the
+    multiverse agrees; a wide fan means the elicitation is the result."""
     pivot = cont_df.pivot_table(index="item_id", columns="cell_id",
                                 values="value", aggfunc="mean")
+    pivot = (pivot - pivot.mean()) / pivot.std(ddof=0).replace(0, 1.0)
     pivot = pivot.loc[pivot.mean(axis=1).sort_values().index]
     x = np.arange(len(pivot))
 

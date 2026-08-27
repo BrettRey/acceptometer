@@ -24,7 +24,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
     x = rng.normal(0, 1, n_constr)
     mu_c_raw = x - x.mean()                       # projected iid normal = sum_to_zero prior
     tau_constr = abs(rng.normal(0, 1))
-    tau_item = abs(rng.normal(0, 1.5))
+    tau_item = rng.gamma(2.0, 1.0)
     kappa = np.sort(rng.normal(0, 2, K - 1))      # order statistics of iid normals
     sigma_u = abs(rng.normal(0, 1))
     # sigma_s has a 0.05 floor in the model: rejection-sample the truncation
@@ -36,6 +36,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
         sigma_s[m] = v
     tau_a = abs(rng.normal(0, 0.5, M_c))
     tau_b = abs(rng.normal(0, 0.5, M_c))
+    omega = abs(rng.normal(0, 0.5, M_c))
     return dict(
         mu_c=tau_constr * mu_c_raw,
         tau_constr=tau_constr,
@@ -49,6 +50,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
         a_dev=rng.normal(0, 1, (M_c, n_constr)) * tau_a[:, None],
         b_dev=rng.normal(0, 1, (M_c, n_constr)) * tau_b[:, None],
         gamma=rng.normal(0, 0.5, (M_c, P)),
+        omega=omega,
         sigma_s=sigma_s,
         a_b=rng.normal(0, 1.5, M_b),
         b_b=rng.normal(0, 1, M_b),
@@ -59,6 +61,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
 def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_item,
                     K, M_c, M_b, P):
     N = n_constr * items_per_constr
+    e_item = rng.normal(0, 1, (M_c, N)) * pr["omega"][:, None]
     constr = np.repeat(np.arange(1, n_constr + 1), items_per_constr)
     theta = pr["mu_c"][constr - 1] + rng.normal(0, pr["tau_item"], N)
     X = rng.normal(0, 1, (N, P))
@@ -71,12 +74,14 @@ def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_ite
     item_h = np.array(item_h); part_h = np.array(part_h)
     y = _ordered_logistic_rng(theta[item_h - 1] + u[part_h - 1], pr["kappa"], rng)
 
-    item_c = np.tile(np.arange(1, N + 1), M_c)
-    cell_c = np.repeat(np.arange(1, M_c + 1), N)
+    reps_c = 3
+    item_c = np.tile(np.arange(1, N + 1), M_c * reps_c)
+    cell_c = np.repeat(np.arange(1, M_c + 1), N * reps_c)
     fam_c = constr[item_c - 1]
     nu = pr["alpha"][cell_c - 1] + pr["a_dev"][cell_c - 1, fam_c - 1] + \
         (pr["beta"][cell_c - 1] + pr["b_dev"][cell_c - 1, fam_c - 1]) * theta[item_c - 1] + \
-        np.einsum("np,np->n", pr["gamma"][cell_c - 1], X[item_c - 1])
+        np.einsum("np,np->n", pr["gamma"][cell_c - 1], X[item_c - 1]) + \
+        e_item[cell_c - 1, item_c - 1]
     s = rng.normal(nu, pr["sigma_s"][cell_c - 1])
 
     reps = 3
@@ -92,7 +97,7 @@ def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_ite
         N_h=len(y), K=K, item_h=item_h.tolist(), N_part=n_part,
         part_h=part_h.tolist(), y=y.tolist(),
         N_c=len(s), M_c=M_c, item_c=item_c.tolist(), cell_c=cell_c.tolist(),
-        s=s.tolist(),
+        s=s.tolist(), has_reps=[1] * M_c,
         N_b=len(z), M_b=M_b, item_b=item_b.tolist(), cell_b=cell_b.tolist(),
         z=z.tolist(),
     )

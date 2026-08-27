@@ -1,4 +1,4 @@
-# Acceptometer external validation packet (2026-08-27)
+# Acceptometer external validation packet (2026-08-27, rev 2: free tau_item)
 
 ## Review brief
 
@@ -8,6 +8,17 @@ in this file. Assume nothing is correct until you have checked it. Do not
 review prose style. Report findings as a numbered list, each with severity
 (major/moderate/minor), the exact location, and, where possible, the concrete
 failure it would cause.
+
+Revision note: after this packet's first assembly, the first real-data fit
+(120 Sprouse LI items, 1,519 participant-level ratings) FAILED the posterior
+predictive check; diagnosis showed the fixed within-family item sd compressed
+the latent scale (observed between-item spread 1.53 vs replicated 1.33
+[1.25, 1.41]; observed within-item SD 1.44 vs replicated 1.63 [1.57, 1.68]).
+tau_item is now a free parameter (real-data posterior median ~2.0), the PPC
+passes (ppp .73 / .54), and recovery + SBC were re-run green. Audit that
+revision too: is the scale still identified with tau_item, kappa, sigma_u,
+and tau_constr all free (the claim: the ordered-logistic error's fixed
+variance anchors it)?
 
 Priority questions, in order:
 
@@ -20,31 +31,32 @@ Priority questions, in order:
    sampling reproduces the truncated sigma_s prior; (d) Wilson-Hilferty is an
    adequate chi-square tail approximation here. If any is wrong, the SBC pass
    is meaningless. Check the math.
-3. SIMULATION MIRRORING: does simulate.py generate from exactly the fitted
-   model (so recovery is a valid computation check), and where does it
-   deliberately deviate (fixed tau_a/tau_b values vs priors)? Is the
-   recovery_check gate logic sound?
-4. LOCO PREDICTIVE: in loco.py, is `_predict_observed_means` a correct
-   posterior predictive for the observed sample mean of n_j new participants
-   (participant effects + ordinal sampling noise)? Is the coverage comparison
-   calibrated? Any leakage of held-out human data into the training fit?
-5. STANDARDIZATION: fit.py z-scores continuous cells per cell before the fit.
-   Does this distort any claim the certificate later makes (e.g. bias alpha_m
-   interpreted after standardization, reliability comparability across cells)?
-6. WARRANT LOGIC: in warrant.py, can any path grant a tier on missing or
-   failed evidence? Are the pre-registered thresholds (reliability>0.5,
-   Spearman>0.6, coverage in [0.75,0.98], nonresponse>10% flag, contamination
-   cap) defensible? What would you change?
-7. LOGPROB ALIGNMENT: in hf_logprob.py, verify the token-position alignment
-   (BOS handling, position-1 indexing, no-BOS skip path) scores exactly
-   P(token_t | tokens_<t) for every scored token.
-8. EVIDENCE CONSISTENCY: do the attached run reports actually support the
-   "passed" verdicts under the stated gates?
-9. WHAT THE FIRST REVIEWER MISSED: a prior adversarial review (attached, with
-   the triage of what was adopted) already caught the family-invariance flaw,
-   contamination cap, temperature mixing, and coverage-target issues. Find
-   what it missed. Documented v1 limitations are fair game only if you argue
-   they are worse than documented.
+3. IDENTIFICATION AFTER THE REVISION: with discrimination fixed at 1 and
+   tau_item free, is the latent scale data-identified, and does anything else
+   (reliability formula, instrument slopes, LOCO predictive) silently assume
+   the old unit within-family sd?
+4. SIMULATION MIRRORING: does simulate.py generate from exactly the fitted
+   model, and where does it deliberately deviate? Is recovery_check sound?
+5. LOCO PREDICTIVE: in loco.py, is `_predict_observed_means` a correct
+   posterior predictive for the observed sample mean of n_j new participants?
+   Any leakage of held-out human data into the training fit?
+6. STANDARDIZATION: fit.py z-scores continuous cells per cell before the fit.
+   Does this distort any certificate claim?
+7. WARRANT LOGIC: can any path in warrant.py grant a tier on missing or failed
+   evidence? Are the thresholds (reliability>0.5, Spearman>0.6, coverage in
+   [0.75,0.98], nonresponse>10% flag, contamination cap) defensible?
+8. PPC DESIGN: ppc.py chooses three statistics and a two-sided ppp with a 0.01
+   gate. Are these the right discrepancies for the claimed purposes? What
+   misfit would slip past all three?
+9. LOGPROB ALIGNMENT: in hf_logprob.py, verify the token-position alignment
+   scores exactly P(token_t | tokens_<t) for every scored token.
+10. EVIDENCE CONSISTENCY: do the attached run reports support the "passed"
+    verdicts under the stated gates?
+11. WHAT THE FIRST REVIEWER MISSED: a prior adversarial review (attached, with
+    triage) caught the family-invariance flaw, contamination cap, temperature
+    mixing, and coverage-target issues; the PPC gate it demanded then caught
+    the scale bug on real data. Find what it missed. Documented v1 limitations
+    are fair game only if you argue they are worse than documented.
 
 
 
@@ -348,9 +360,12 @@ wordfreq, pyyaml, click, httpx.
 //                   each cell with its own bias, slope, nuisance loadings, noise
 //
 // Scale convention: theta is in human-logit units. The human-arm discrimination
-// is fixed at 1 and the within-family item sd is fixed at 1; construction-family
-// means are sum-to-zero, so the cutpoints absorb overall location. Instrument
-// slopes beta are therefore "standardized score units per human logit".
+// is fixed at 1, so the ordered-logistic error's fixed variance anchors the
+// latent scale and the within-family item sd (tau_item) is a free parameter;
+// construction-family means are sum-to-zero, so the cutpoints absorb overall
+// location. Instrument slopes beta are "standardized score units per human
+// logit". (An earlier version fixed tau_item at 1; the pilot PPC showed that
+// compresses real between-item spread and inflates within-item noise.)
 data {
   int<lower=0, upper=1> prior_only;
 
@@ -387,6 +402,7 @@ parameters {
   // latent acceptability
   sum_to_zero_vector[N_constr] mu_c_raw;
   real<lower=0> tau_constr;
+  real<lower=0> tau_item;
   vector[N_item] z_item;
 
   // human arm
@@ -417,7 +433,7 @@ parameters {
 }
 transformed parameters {
   vector[N_constr] mu_c = tau_constr * mu_c_raw;
-  vector[N_item] theta = mu_c[constr] + z_item;   // within-family sd fixed at 1
+  vector[N_item] theta = mu_c[constr] + tau_item * z_item;
   vector[N_part] u = sigma_u * u_raw;
   matrix[M_c, N_constr] a_dev = diag_pre_multiply(tau_a, a_dev_raw);
   matrix[M_c, N_constr] b_dev = diag_pre_multiply(tau_b, b_dev_raw);
@@ -426,6 +442,7 @@ model {
   // priors (weakly informative throughout; no flat priors)
   mu_c_raw ~ normal(0, 1);
   tau_constr ~ normal(0, 1);
+  tau_item ~ normal(0, 1.5);
   z_item ~ std_normal();
   kappa ~ normal(0, 2);
   u_raw ~ std_normal();
@@ -542,6 +559,7 @@ def simulate(
     M_b: int = 2,
     P: int = 2,
     tau_constr: float = 0.8,
+    tau_item: float = 1.2,
     sigma_u: float = 0.5,
     seed: int = 20260827,
 ) -> tuple[dict, SimTruth]:
@@ -554,7 +572,7 @@ def simulate(
 
     mu_c = rng.normal(0, tau_constr, n_constr)
     mu_c -= mu_c.mean()  # sum-to-zero, as in the Stan parameterization
-    theta = mu_c[constr - 1] + rng.normal(0, 1.0, N)
+    theta = mu_c[constr - 1] + rng.normal(0, tau_item, N)
 
     X = rng.normal(0, 1, (N, P))  # covariates arrive centered/scaled
 
@@ -684,6 +702,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
     x = rng.normal(0, 1, n_constr)
     mu_c_raw = x - x.mean()                       # projected iid normal = sum_to_zero prior
     tau_constr = abs(rng.normal(0, 1))
+    tau_item = abs(rng.normal(0, 1.5))
     kappa = np.sort(rng.normal(0, 2, K - 1))      # order statistics of iid normals
     sigma_u = abs(rng.normal(0, 1))
     # sigma_s has a 0.05 floor in the model: rejection-sample the truncation
@@ -698,6 +717,7 @@ def _draw_prior(rng, n_constr, K, M_c, M_b, P):
     return dict(
         mu_c=tau_constr * mu_c_raw,
         tau_constr=tau_constr,
+        tau_item=tau_item,
         kappa=kappa,
         sigma_u=sigma_u,
         alpha=rng.normal(0, 1, M_c),
@@ -718,7 +738,7 @@ def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_ite
                     K, M_c, M_b, P):
     N = n_constr * items_per_constr
     constr = np.repeat(np.arange(1, n_constr + 1), items_per_constr)
-    theta = pr["mu_c"][constr - 1] + rng.normal(0, 1.0, N)
+    theta = pr["mu_c"][constr - 1] + rng.normal(0, pr["tau_item"], N)
     X = rng.normal(0, 1, (N, P))
 
     u = rng.normal(0, pr["sigma_u"], n_part)
@@ -766,7 +786,7 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
     uniformity p > 0.005 for every tracked parameter (loose Bonferroni; this is
     a smoke alarm, not a certificate)."""
     rng = np.random.default_rng(seed)
-    tracked = ["tau_constr", "sigma_u"] + \
+    tracked = ["tau_constr", "tau_item", "sigma_u"] + \
         [f"beta[{m}]" for m in range(1, M_c + 1)] + \
         [f"sigma_s[{m}]" for m in range(1, M_c + 1)]
     ranks: dict[str, list[int]] = {t: [] for t in tracked}
@@ -1060,8 +1080,8 @@ def build_stan_data(
 
 
 def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
-              iter_warmup: int = 750, iter_sampling: int = 750,
-              adapt_delta: float = 0.9, chains: int = 4):
+              iter_warmup: int = 1000, iter_sampling: int = 1000,
+              adapt_delta: float = 0.95, chains: int = 4):
     """Compile (cached), sample, and return (CmdStanMCMC, arviz.InferenceData)."""
     import arviz as az
     from cmdstanpy import CmdStanModel
@@ -1778,7 +1798,7 @@ class HFLogprobScorer:
 
 ---
 
-## EVIDENCE: run reports
+## EVIDENCE: run reports (all from the revised model)
 
 ### fake-data recovery + diagnostics (runs/verify-cli)
 
@@ -1786,36 +1806,36 @@ class HFLogprobScorer:
 {
   "divergences": 0,
   "divergence_rate": 0.0,
-  "rhat_max": 1.0057,
-  "ess_bulk_min": 633,
+  "rhat_max": 1.0035,
+  "ess_bulk_min": 1793,
   "passed": true
 }
 {
-  "theta_90ci_coverage": 0.958,
-  "theta_post_mean_corr_truth": 0.959,
+  "theta_90ci_coverage": 0.917,
+  "theta_post_mean_corr_truth": 0.963,
   "beta_within_95ci": true,
   "beta_post_mean": [
-    0.239,
-    0.463,
-    0.402
+    0.257,
+    0.477,
+    0.413
   ],
   "beta_truth": [
     0.312,
     0.421,
     0.359
   ],
-  "reliability_max_abs_err": 0.08,
+  "reliability_max_abs_err": 0.087,
   "reliability_truth": [
-    0.197,
-    0.479,
-    0.561
+    0.237,
+    0.538,
+    0.619
   ],
   "passed": true
 }
 
 ```
 
-### SBC-lite (runs/sbc-report.json)
+### SBC-lite, freed-scale model (runs/sbc-report.json)
 
 ```json
 {
@@ -1824,81 +1844,94 @@ class HFLogprobScorer:
   "n_thin": 63,
   "params": {
     "tau_constr": {
-      "chi2": 6.2,
-      "p_uniform_approx": 0.4015,
+      "chi2": 9.0,
+      "p_uniform_approx": 0.1725,
       "rank_hist": [
-        10,
-        7,
-        3,
-        4,
+        5,
         4,
         5,
+        5,
+        12,
+        3,
+        6
+      ]
+    },
+    "tau_item": {
+      "chi2": 13.55,
+      "p_uniform_approx": 0.0349,
+      "rank_hist": [
+        8,
+        2,
+        2,
+        5,
+        12,
+        4,
         7
       ]
     },
     "sigma_u": {
-      "chi2": 11.45,
-      "p_uniform_approx": 0.0747,
+      "chi2": 5.5,
+      "p_uniform_approx": 0.4825,
       "rank_hist": [
-        11,
-        8,
-        5,
-        1,
-        3,
         7,
-        5
+        5,
+        2,
+        7,
+        4,
+        9,
+        6
       ]
     },
     "beta[1]": {
-      "chi2": 2.35,
-      "p_uniform_approx": 0.8853,
+      "chi2": 6.2,
+      "p_uniform_approx": 0.4015,
       "rank_hist": [
+        4,
+        4,
+        4,
+        10,
         6,
-        5,
-        6,
-        3,
         8,
+        4
+      ]
+    },
+    "beta[2]": {
+      "chi2": 2.0,
+      "p_uniform_approx": 0.9194,
+      "rank_hist": [
+        4,
+        6,
+        8,
+        4,
+        6,
         6,
         6
       ]
     },
-    "beta[2]": {
-      "chi2": 4.45,
-      "p_uniform_approx": 0.618,
+    "sigma_s[1]": {
+      "chi2": 6.9,
+      "p_uniform_approx": 0.3299,
       "rank_hist": [
         10,
+        3,
+        6,
+        8,
         5,
-        5,
-        4,
-        6,
-        6,
-        4
-      ]
-    },
-    "sigma_s[1]": {
-      "chi2": 10.05,
-      "p_uniform_approx": 0.1216,
-      "rank_hist": [
-        6,
-        4,
-        7,
-        4,
-        4,
-        12,
-        3
+        3,
+        5
       ]
     },
     "sigma_s[2]": {
-      "chi2": 4.8,
-      "p_uniform_approx": 0.5714,
+      "chi2": 4.1,
+      "p_uniform_approx": 0.6653,
       "rank_hist": [
-        6,
-        9,
-        8,
-        5,
-        5,
         4,
-        3
+        9,
+        4,
+        4,
+        7,
+        5,
+        7
       ]
     }
   },
@@ -1907,95 +1940,27 @@ class HFLogprobScorer:
 
 ```
 
-### LOCO on simulation (runs/loco-sim-report.json)
+### Real-data pilot fit + PPC (runs/pilot, Sprouse LI, 120 items, Pythia-160m logprob cells)
 
 ```json
 {
-  "per_family": {
-    "fam1": {
-      "n_items": 8,
-      "rmse": 1.1,
-      "mean_signed_error": -0.728,
-      "spearman": 0.762,
-      "coverage90": 1.0,
-      "diagnostics_passed": true,
-      "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0024,
-        "ess_bulk_min": 977,
-        "passed": true
-      }
-    },
-    "fam2": {
-      "n_items": 8,
-      "rmse": 1.296,
-      "mean_signed_error": -0.015,
-      "spearman": 0.405,
-      "coverage90": 0.875,
-      "diagnostics_passed": true,
-      "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0058,
-        "ess_bulk_min": 1083,
-        "passed": true
-      }
-    },
-    "fam3": {
-      "n_items": 8,
-      "rmse": 1.085,
-      "mean_signed_error": 0.443,
-      "spearman": 0.476,
-      "coverage90": 1.0,
-      "diagnostics_passed": true,
-      "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0039,
-        "ess_bulk_min": 1083,
-        "passed": true
-      }
-    },
-    "fam4": {
-      "n_items": 8,
-      "rmse": 1.038,
-      "mean_signed_error": 0.507,
-      "spearman": 0.667,
-      "coverage90": 1.0,
-      "diagnostics_passed": true,
-      "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0036,
-        "ess_bulk_min": 946,
-        "passed": true
-      }
-    }
-  },
-  "n_families": 4,
-  "mean_rmse": 1.13,
-  "mean_spearman": 0.578,
-  "mean_coverage90": 0.969,
-  "all_diagnostics_passed": true
+  "divergences": 4,
+  "divergence_rate": 0.0007,
+  "rhat_max": 1.0086,
+  "ess_bulk_min": 847,
+  "passed": true
 }
-
-```
-
-### PPC on simulation (runs/ppc-sim-report.json)
-
-```json
 {
   "family_item_mean_spread": {
-    "observed": 1.138,
-    "ppp": 0.81
+    "observed": 1.528,
+    "ppp": 0.73
   },
   "within_item_disagreement_sd": {
-    "observed": 1.949,
-    "ppp": 0.94
+    "observed": 1.444,
+    "ppp": 0.54
   },
   "category_usage_tv_distance": {
-    "mean_replicate_tv": 0.07,
+    "mean_replicate_tv": 0.032,
     "note": "TV distance between replicate and observed category frequencies; large values mean the model uses the scale differently than people did"
   },
   "n_sims": 200,
@@ -2007,8 +1972,6 @@ class HFLogprobScorer:
 ---
 
 ## PRIOR REVIEW (glm-5.3-flash) AND TRIAGE
-
-The triage of adopted/deferred findings is in the DECISIONS entry below the review.
 
 # Adversarial review: Acceptometer design spec
 
@@ -2117,3 +2080,12 @@ earlier precision was the model borrowing family-specific linking it could
 not have known. Review findings NOT adopted: scalar-cells-as-ordered-logistic
 (documented v1 misspecification instead), prior-sensitivity stage (v2),
 held-out-item SBC (v2), rater-specific cutpoints (v2).
+2026-08-27 — Within-family item sd (tau_item) freed; scale anchored by the
+ordered-logistic error variance instead. Reason: first real-data PPC (Sprouse
+LI pilot, 120 items, 1,519 ratings) failed with observed between-item spread
+1.53 vs replicated 1.33 [1.25, 1.41] and observed within-item SD 1.44 vs
+replicated 1.63 [1.57, 1.68]: fixing the sd at 1 compressed the latent scale
+and forced ordinal noise to compensate. With tau_item free the data estimates
+it at ~2.0 and the PPC passes (ppp .73 / .54). Recovery and SBC re-run and
+green after the change. This is the PPC gate doing precisely what it was
+built for on first contact with real data.

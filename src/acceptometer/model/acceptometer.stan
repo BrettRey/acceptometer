@@ -36,6 +36,11 @@ data {
   array[N_c] int<lower=1, upper=N_item> item_c;
   array[N_c] int<lower=1, upper=max(M_c, 1)> cell_c;
   vector[N_c] s;
+  // 1 when the cell has replicated observations of at least one item: the
+  // instrument-by-item error is identified only against replicate noise, and
+  // for single-observation cells it is redundant with sigma_s (a ridge), so
+  // there it is switched off and sigma_s carries the total error.
+  array[max(M_c, 1)] int<lower=0, upper=1> has_reps;
 
   // binary instrument cells
   int<lower=0> N_b;
@@ -67,6 +72,12 @@ parameters {
   vector<lower=0>[M_c] tau_a;
   vector<lower=0>[M_c] tau_b;
   matrix[M_c, P] gamma;
+  // instrument-by-item systematic error: repeats of a cell can average away
+  // draw noise (sigma_s) but never the instrument's own stable opinion about
+  // an item; without this term, replicated cells claim fictitious precision
+  // and drag theta away from the human criterion.
+  matrix[M_c, N_item] e_raw;
+  vector<lower=0>[M_c] omega;
   // 0.05 floor (standardized-score scale): a contamination-shaped or
   // degenerate cell cannot drive sigma to zero and pass itself off as a
   // noiseless oracle for unrated items.
@@ -88,7 +99,12 @@ model {
   // priors (weakly informative throughout; no flat priors)
   mu_c_raw ~ normal(0, 1);
   tau_constr ~ normal(0, 1);
-  tau_item ~ normal(0, 1.5);
+  // zero-avoiding: tau_item -> 0 means items within a family are identical in
+  // acceptability, a priori false for designed judgment studies, and it is
+  // exactly the region where a spurious reflection mode (flipped instrument
+  // slopes) escapes the human arm's sign anchoring. gamma(2,1): mode 1,
+  // density vanishing at 0.
+  tau_item ~ gamma(2, 1);
   z_item ~ std_normal();
   kappa ~ normal(0, 2);
   u_raw ~ std_normal();
@@ -101,6 +117,8 @@ model {
   tau_a ~ normal(0, 0.5);
   tau_b ~ normal(0, 0.5);
   to_vector(gamma) ~ normal(0, 0.5);
+  to_vector(e_raw) ~ std_normal();
+  omega ~ normal(0, 0.5);
   sigma_s ~ normal(0, 1);
 
   a_b ~ normal(0, 1.5);
@@ -117,7 +135,8 @@ model {
         int i = item_c[n];
         int c = constr[i];
         nu[n] = alpha[m] + a_dev[m, c] + (beta[m] + b_dev[m, c]) * theta[i]
-                + dot_product(gamma[m], X[i]);
+                + dot_product(gamma[m], X[i])
+                + (has_reps[m] == 1 ? omega[m] * e_raw[m, i] : 0);
       }
       s ~ normal(nu, sigma_s[cell_c]);
     }
@@ -141,5 +160,7 @@ generated quantities {
   vector[M_c] reliability;
   for (m in 1:M_c)
     reliability[m] = square(beta[m]) * v_theta
-                     / (square(beta[m]) * v_theta + square(sigma_s[m]));
+                     / (square(beta[m]) * v_theta
+                        + (has_reps[m] == 1 ? square(omega[m]) : 0)
+                        + square(sigma_s[m]));
 }

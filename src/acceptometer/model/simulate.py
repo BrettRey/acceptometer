@@ -27,6 +27,7 @@ class SimTruth:
     beta: np.ndarray
     gamma: np.ndarray
     sigma_s: np.ndarray
+    omega: np.ndarray
     a_b: np.ndarray
     b_b: np.ndarray
     g_b: np.ndarray
@@ -89,13 +90,17 @@ def simulate(
     a_dev = rng.normal(0, tau_a_true, (M_c, n_constr))
     b_dev = rng.normal(0, tau_b_true, (M_c, n_constr))
     gamma = rng.normal(0, 0.3, (M_c, P))
+    omega_true = rng.uniform(0.2, 0.4, M_c)
+    e_item = rng.normal(0, 1, (M_c, N)) * omega_true[:, None]
     sigma_s = rng.uniform(0.4, 0.9, M_c)
-    item_c = np.tile(np.arange(1, N + 1), M_c)
-    cell_c = np.repeat(np.arange(1, M_c + 1), N)
+    reps_c = 3  # replicated cells, so the instrument-by-item error is identified
+    item_c = np.tile(np.arange(1, N + 1), M_c * reps_c)
+    cell_c = np.repeat(np.arange(1, M_c + 1), N * reps_c)
     fam_c = constr[item_c - 1]
     nu = alpha[cell_c - 1] + a_dev[cell_c - 1, fam_c - 1] + \
         (beta[cell_c - 1] + b_dev[cell_c - 1, fam_c - 1]) * theta[item_c - 1] + \
-        np.einsum("np,np->n", gamma[cell_c - 1], X[item_c - 1])
+        np.einsum("np,np->n", gamma[cell_c - 1], X[item_c - 1]) + \
+        e_item[cell_c - 1, item_c - 1]
     s = rng.normal(nu, sigma_s[cell_c - 1])
 
     # binary cells: every cell judges every item 5 times (repeat draws)
@@ -116,12 +121,12 @@ def simulate(
         N_h=len(y), K=K, item_h=item_h.tolist(), N_part=n_part,
         part_h=part_h.tolist(), y=y.tolist(),
         N_c=len(s), M_c=M_c, item_c=item_c.tolist(), cell_c=cell_c.tolist(),
-        s=s.tolist(),
+        s=s.tolist(), has_reps=[1] * M_c,
         N_b=len(z), M_b=M_b, item_b=item_b.tolist(), cell_b=cell_b.tolist(),
         z=z.tolist(),
     )
     truth = SimTruth(theta, mu_c, tau_constr, kappa, sigma_u,
-                     alpha, beta, gamma, sigma_s, a_b, b_b, g_b)
+                     alpha, beta, gamma, sigma_s, omega_true, a_b, b_b, g_b)
     return data, truth
 
 
@@ -148,7 +153,8 @@ def recovery_check(idata, truth: SimTruth) -> dict:
 
     rel = post["reliability"].stack(d=("chain", "draw")).values.mean(axis=1)
     v_theta = truth.theta.var()
-    rel_truth = truth.beta**2 * v_theta / (truth.beta**2 * v_theta + truth.sigma_s**2)
+    rel_truth = truth.beta**2 * v_theta / (
+        truth.beta**2 * v_theta + truth.omega**2 + truth.sigma_s**2)
     rel_err = float(np.max(np.abs(rel - rel_truth)))
     report["reliability_max_abs_err"] = round(rel_err, 3)
     report["reliability_truth"] = [round(v, 3) for v in rel_truth]

@@ -47,14 +47,26 @@ response distribution, not the item mean, so posterior predictive checks can
 target variance and disagreement structure, exactly where binary labels suppress
 legitimate heterogeneity (the Dentella lesson).
 
-**Instrument arm** (the LLM scores). Elicitation method `m` (a cell in the
-multiverse grid, model x method x prompt paraphrase) produces score `s_im`, and
-the linking function varies by construction family `c` (LLM scoring error
-clusters by phenomenon; a family-invariant linking would assume that away):
+**Instrument arm** (the LLM scores). A fitted instrument cell `m` is one
+(model, method) pair: prompt paraphrases and sampling repeats are repeated
+measurements of that one instrument, never additional witnesses (three
+paraphrases of one model share errors, and three transforms of one forward
+pass certainly do; treating them as independent lets one model outvote the
+human criterion). The grid still records every paraphrase separately for the
+descriptive fan and prompt-invariance statistics. The linking function varies
+by construction family `c` (LLM scoring error clusters by phenomenon), and
+replicated cells carry an instrument-by-item error `e_mi` (repeats average
+away draw noise, never the instrument's stable opinion about an item; for
+single-observation cells the term is redundant with sigma_m and is switched
+off):
 
-    continuous: s_im ~ normal(alpha_m + a_dev_mc + (beta_m + b_dev_mc) * theta_i + gamma_m' * x_i, sigma_m)
-                a_dev_mc ~ normal(0, tau_a_m),  b_dev_mc ~ normal(0, tau_b_m)
+    continuous: s_imr ~ normal(alpha_m + a_dev_mc + (beta_m + b_dev_mc) * theta_i
+                               + gamma_m' * x_i + e_mi, sigma_m)
+                a_dev_mc ~ normal(0, tau_a_m),  b_dev_mc ~ normal(0, tau_b_m),
+                e_mi ~ normal(0, omega_m)
     binary:     s_im ~ bernoulli_logit(a_m + b_m * theta_i + g_m' * x_i)
+                (v1: descriptive only in fits with near-deterministic repeats;
+                no overdispersion term yet)
 
 `x_i` = nuisance covariates: log token length, mean unigram log frequency
 (wordfreq). `beta_m` is the population information coefficient; `alpha_m`,
@@ -65,7 +77,8 @@ deviations are drawn from their priors, which is what makes out-of-family
 intervals wider than in-family ones by construction rather than by hope.
 
 **Conditional reliability** per continuous cell =
-`beta_m^2 * var(theta) / (beta_m^2 * var(theta) + sigma_m^2)`. This is
+`beta_m^2 * var(theta) / (beta_m^2 * var(theta) + omega_m^2 + sigma_m^2)`
+(omega only for replicated cells). This is
 conditional on the nuisance covariates and excludes the systematic bias terms
 (gamma, family deviations) deliberately: they are bias structure, not signal.
 The certificate labels it as conditional; it is also fit- and item-set-specific,
