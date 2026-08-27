@@ -81,6 +81,40 @@ standardized human item means (basin selection, no posterior bias, no sign
 constraints anywhere; an anti-correlated instrument can still reach negative
 beta).
 
+2026-08-27 — Second external review (GPT-family, via Brett) triaged and
+largely adopted; it reviewed packet rev 2 but most findings held against rev
+3 code. Adopted: (1) DESIGN scale-convention text rewritten to match the
+implemented identification (link-anchored scale; sum-to-zero family location;
+prior-anchored absolute location; design-dependent variance separation);
+(2) held-out/new families excluded from the sum-to-zero vector, independent
+normal(0, tau_constr) predictive effects (the constrained vector leaks
+finite-set centering information to a "new" family); (3) tau_item, tau_a,
+tau_b, omega added to the diagnostics core and to fake-data recovery truth
+and gates; (4) warrant enforces the full ladder literally: recovery + SBC
+prerequisites, PPC required (not merely not-failed) for aggregate, nonresponse
+flags exclude cells, LOCO must cover all families with fold diagnostics
+passed, and all evidence must be hash-bound to the posterior via run.json;
+(5) reliability gate switched to new-family predictive reliability (fresh
+slope-deviation draw per posterior draw), per-family reliabilities reported,
+global ratio demoted to non-warrant status; (6) contamination cap extended to
+ranking (LOCO rewards contamination); uncertainty-aware gates (median + q10;
+pooled Spearman + family-cluster bootstrap lower bound); (7) tie-aware
+Spearman (average ranks) + pooled out-of-fold statistic; (8) LOCO target
+stated as same-participants-new-items, predictions use raters' posterior
+effects; (9) PPC: n_sims 1000, conditional AND marginal participant modes,
+per-family ppp vectors gated on minima, proper predictive reference for
+category usage, instrument-arm residual flags (warn-only); (10) LOCO
+standardization training-only (was transductive); (11) SBC diagnostics-aware
+with a 20% failure cap, rerun at R=100; (12) SLOR made unit-consistent
+(per-word, first-word skip aligned with no-BOS path; cached pilot cell
+re-scored) and HF provenance now records the checkpoint commit hash;
+(13) alpha renamed alpha_standardized_median. Adapted rather than adopted:
+full decision-theoretic thresholds (deferred: needs estimand-specific loss),
+zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
+"no real-data LOCO/warrant exists" — the reviewer saw rev 2; both exist in
+rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
+population-transfer test, temporal drift evidence.
+
 2026-08-27 — Instrument-by-item error term (omega) added for replicated
 cells. Repeats average away draw noise but never the instrument's stable
 opinion about an item; without the term, replicated cells claim fictitious

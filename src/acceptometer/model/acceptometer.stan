@@ -19,6 +19,12 @@ data {
   int<lower=1> N_item;
   int<lower=1> N_constr;
   array[N_item] int<lower=1, upper=N_constr> constr;
+  // 1 marks a family treated as NEW: excluded from the sum-to-zero training
+  // vector and given an independent normal(0, tau_constr) effect. A held-out
+  // family inside the constrained vector would inherit information through
+  // the finite-set centering (its mean is the negative sum of the others),
+  // which is not what a genuinely new construction family receives.
+  array[N_constr] int<lower=0, upper=1> is_new;
   int<lower=0> P;                    // nuisance covariates (log length, unigram logfreq), centered+scaled
   matrix[N_item, P] X;
 
@@ -49,9 +55,20 @@ data {
   array[N_b] int<lower=1, upper=max(M_b, 1)> cell_b;
   array[N_b] int<lower=0, upper=1> z;
 }
+transformed data {
+  int N_old = 0;
+  int N_newf = 0;
+  array[N_constr] int old_ix = rep_array(0, N_constr);
+  array[N_constr] int new_ix = rep_array(0, N_constr);
+  for (c in 1:N_constr) {
+    if (is_new[c] == 1) { N_newf += 1; new_ix[c] = N_newf; }
+    else { N_old += 1; old_ix[c] = N_old; }
+  }
+}
 parameters {
   // latent acceptability
-  sum_to_zero_vector[N_constr] mu_c_raw;
+  sum_to_zero_vector[N_old] mu_c_raw;
+  vector[N_newf] mu_new_raw;
   real<lower=0> tau_constr;
   real<lower=0> tau_item;
   vector[N_item] z_item;
@@ -89,7 +106,10 @@ parameters {
   matrix[M_b, P] g_b;
 }
 transformed parameters {
-  vector[N_constr] mu_c = tau_constr * mu_c_raw;
+  vector[N_constr] mu_c;
+  for (c in 1:N_constr)
+    mu_c[c] = tau_constr * (is_new[c] == 1 ? mu_new_raw[new_ix[c]]
+                                           : mu_c_raw[old_ix[c]]);
   vector[N_item] theta = mu_c[constr] + tau_item * z_item;
   vector[N_part] u = sigma_u * u_raw;
   matrix[M_c, N_constr] a_dev = diag_pre_multiply(tau_a, a_dev_raw);
@@ -98,6 +118,7 @@ transformed parameters {
 model {
   // priors (weakly informative throughout; no flat priors)
   mu_c_raw ~ normal(0, 1);
+  mu_new_raw ~ std_normal();
   tau_constr ~ normal(0, 1);
   // zero-avoiding: tau_item -> 0 means items within a family are identical in
   // acceptability, a priori false for designed judgment studies, and it is
@@ -157,10 +178,28 @@ generated quantities {
   // structure, not signal, and the certificate labels this quantity as
   // conditional for exactly that reason.
   real v_theta = variance(theta);
+  // global-slope signal ratio: uses the population slope only. NOT a warrant
+  // quantity on its own, because a family's slope deviation changes how much
+  // theta-signal that family's scores carry.
   vector[M_c] reliability;
-  for (m in 1:M_c)
+  // family-specific reliability, using the family's realized slope
+  matrix[M_c, N_constr] reliability_family;
+  // new-family predictive reliability: the projectible quantity. Each draw
+  // samples a fresh slope deviation from its posterior scale, so the
+  // posterior of reliability_new is the predictive distribution for a family
+  // the instrument has never seen.
+  vector[M_c] reliability_new;
+  for (m in 1:M_c) {
+    real noise = (has_reps[m] == 1 ? square(omega[m]) : 0) + square(sigma_s[m]);
     reliability[m] = square(beta[m]) * v_theta
-                     / (square(beta[m]) * v_theta
-                        + (has_reps[m] == 1 ? square(omega[m]) : 0)
-                        + square(sigma_s[m]));
+                     / (square(beta[m]) * v_theta + noise);
+    for (c in 1:N_constr) {
+      real bfc = beta[m] + b_dev[m, c];
+      reliability_family[m, c] = square(bfc) * v_theta
+                                 / (square(bfc) * v_theta + noise);
+    }
+    real b_new = beta[m] + normal_rng(0, tau_b[m]);
+    reliability_new[m] = square(b_new) * v_theta
+                         / (square(b_new) * v_theta + noise);
+  }
 }

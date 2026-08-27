@@ -39,7 +39,9 @@ class HFLogprobScorer:
         self.model.to(self.device)
         self.model.eval()
         model_revision = getattr(self.model.config, "_name_or_path", model_id)
-        self.revision = f"{model_revision}; transformers={transformers.__version__}"
+        commit = getattr(self.model.config, "_commit_hash", None) or "unknown"
+        self.revision = (f"{model_revision}; commit={commit}; "
+                         f"transformers={transformers.__version__}")
 
     def cells(self) -> list[CellSpec]:
         """Return the three deterministic log-probability cells."""
@@ -79,6 +81,7 @@ class HFLogprobScorer:
             }
             if cell.method == "slor":
                 meta["unigram_source"] = "wordfreq-zipf"
+                meta["slor_definition"] = "(subword_logprob_sum - word_unigram_sum) / n_words"
             out.append(
                 Measurement(
                     item_id=item.item_id,
@@ -105,18 +108,23 @@ class HFLogprobScorer:
                 items[start : start + 16], batch_ids, batch_sums, strict=True
             ):
                 n_tokens = len(token_ids) if bos_id is not None else max(len(token_ids) - 1, 0)
-                unigram_sum = self._unigram_logprob_sum(item)
-                denominator = float(n_tokens)
+                # slor is a hybrid quantity here: subword model logprob minus a
+                # word-level (wordfreq) unigram sum, normalized per WORD so the
+                # two sums share a unit; when the first model token is unscored
+                # (no BOS) the first word's unigram term is skipped to match
+                unigram_sum, n_words = self._unigram_logprob_sum(
+                    item, skip_first=bos_id is None)
                 results.append(
                     {
                         "logprob_sum": logprob_sum,
-                        "logprob_mean": logprob_sum / denominator if n_tokens else math.nan,
+                        "logprob_mean": logprob_sum / n_tokens if n_tokens else math.nan,
                         "slor": (
-                            (logprob_sum - unigram_sum) / denominator
-                            if n_tokens
+                            (logprob_sum - unigram_sum) / n_words
+                            if n_tokens and n_words
                             else math.nan
                         ),
                         "n_tokens": n_tokens,
+                        "n_words": n_words,
                         "first_token_skipped": bos_id is None,
                     }
                 )
@@ -164,14 +172,20 @@ class HFLogprobScorer:
         return sums
 
     @staticmethod
-    def _unigram_logprob_sum(item: Item) -> float:
+    def _unigram_logprob_sum(item: Item, skip_first: bool = False) -> tuple[float, int]:
         from wordfreq import zipf_frequency
 
-        total = 0.0
+        total, n = 0.0, 0
+        first = True
         for raw_word in item.text.split():
             word = raw_word.strip(string.punctuation).lower()
             if not word:
                 continue
+            if first and skip_first:
+                first = False
+                continue
+            first = False
             zipf = max(float(zipf_frequency(word, item.language)), 1.0)
             total += (zipf - 9.0) * math.log(10.0)
-        return total
+            n += 1
+        return total, n

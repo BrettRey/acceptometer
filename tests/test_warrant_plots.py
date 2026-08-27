@@ -55,8 +55,15 @@ def test_warrant_certificate(run):
 
     # every instrument row carries numbers read from the posterior
     for inst in loaded["instruments"]:
-        assert 0.0 <= inst["reliability_median"] <= 1.0
-        assert len(inst["reliability_90"]) == 2
+        assert 0.0 <= inst["reliability_new_family_median"] <= 1.0
+        assert len(inst["reliability_new_family_80"]) == 2
+        assert "reliability_by_family" in inst
+    # the ladder is enforced literally: the fixture run dir has no
+    # recovery.json/sbc.json (and its tiny fit may fail diagnostics), so
+    # screening must be refused, whichever prerequisite fires first
+    assert "screening" in loaded["refused_claims"]
+    assert ("missing" in loaded["refused_claims"]["screening"]
+            or "failed" in loaded["refused_claims"]["screening"])
 
 
 def _assert_png(path):

@@ -34,8 +34,27 @@ cmdstanpy). Latent item acceptability links two kinds of noisy measurement.
     theta_i ~ normal(mu_c[c(i)], tau_item)      # item-level latent acceptability
     mu_c    ~ normal(0, tau_constr)             # partial pooling over families
 
-Scale identified by standardizing theta (soft sum-to-zero, unit-scale prior);
-cutpoints and instrument slopes are then interpretable.
+Identification, stated precisely because each piece comes from a different
+source:
+
+- **Scale**: fixed by convention, via the human arm's discrimination (1) and
+  the ordered-logistic error's fixed variance. tau_item, tau_constr, and
+  sigma_u are therefore all free and data-identified relative to that anchor
+  (tau_item carries a zero-avoiding gamma(2,1) prior: a family of identical
+  items is a priori false for designed judgment studies, and tau_item -> 0 is
+  where a spurious reflection mode escapes the human arm's sign anchoring).
+- **Family-effect location**: training families sit in a `sum_to_zero_vector`.
+  A family marked NEW (LOCO holdouts, genuinely new families) is excluded
+  from that vector and gets an independent normal(0, tau_constr) effect: a
+  held-out family inside the constrained vector would inherit information
+  through the finite-set centering.
+- **Residual overall location**: conventional/prior-anchored. Joint shifts of
+  theta, kappa, and instrument intercepts are likelihood-equivalent until the
+  z_item and intercept priors intervene; absolute location is therefore not a
+  reportable quantity.
+- **Variance-component separation** (tau_item vs tau_constr vs sigma_u) is
+  data-driven only insofar as the participant-by-item design is crossed;
+  sparse or nested rating designs push it back onto the priors.
 
 **Human arm** (the criterion). Participant `p` gives ordinal rating `y_ip` on a
 K-point scale:
@@ -76,18 +95,26 @@ present itself as a noiseless oracle. For an item in a NEW family, the
 deviations are drawn from their priors, which is what makes out-of-family
 intervals wider than in-family ones by construction rather than by hope.
 
-**Conditional reliability** per continuous cell =
-`beta_m^2 * var(theta) / (beta_m^2 * var(theta) + omega_m^2 + sigma_m^2)`
-(omega only for replicated cells). This is
-conditional on the nuisance covariates and excludes the systematic bias terms
-(gamma, family deviations) deliberately: they are bias structure, not signal.
-The certificate labels it as conditional; it is also fit- and item-set-specific,
-and the certificate records the item pool it was estimated on. MORCELA is the
-special case of one continuous method, no family structure, fixed covariates;
-here the linking is Bayesian, multilevel, and jointly estimated with the human
-arm, so linking uncertainty propagates into everything computed from the joint
-posterior (certificate summaries derived outside it, like LOCO RMSEs, are
-labeled as point summaries).
+**Reliability quantities** (all conditional on the nuisance covariates, all
+fit- and item-set-specific, with noise = omega_m^2 + sigma_m^2 for replicated
+cells):
+
+- `reliability[m]` — the **global-slope signal ratio**, using beta_m alone.
+  NOT a warrant quantity: a family slope deviation changes how much
+  theta-signal that family's scores carry, so a cell can look reliable
+  globally while carrying no signal in a particular family.
+- `reliability_family[m, c]` — per-family, using the realized slope
+  `beta_m + b_dev_mc`.
+- `reliability_new[m]` — **new-family predictive**: each posterior draw
+  samples a fresh slope deviation, so this posterior is the predictive
+  distribution for a family the instrument has never seen. This is the
+  screening-gate quantity, because screening claims project.
+
+MORCELA is the special case of one continuous method, no family structure,
+fixed covariates; here the linking is Bayesian, multilevel, and jointly
+estimated with the human arm, so linking uncertainty propagates into
+everything computed from the joint posterior (certificate summaries derived
+outside it, like LOCO RMSEs, are labeled as point summaries).
 
 **The instrument use.** Items with LLM scores but no human data get a posterior
 for `theta_i` through the fitted linking function, with honestly widened
@@ -155,16 +182,26 @@ Machine-readable and human-auditable. Fields:
   benchmark; drift epoch and sentinel bounds; contamination assessment (public
   benchmark items? published before model cutoff?).
 - `licensed_claims`: which tiers of the survey's intended-use hierarchy the
-  evidence supports (screening / ranking / aggregate estimation / effect-size
-  reproduction / distributional claims), each explicitly granted or refused
-  with the reason and the pre-registered numeric threshold it met or missed
-  (defaults: screening needs diagnostics passed + any cell conditional
-  reliability > 0.5; ranking additionally needs mean LOCO Spearman > 0.6;
-  aggregate estimation additionally needs LOCO 90% coverage in [0.75, 0.98]).
-  **Contamination caps tiers:** if the item source is public-benchmark-suspect
-  (or unassessed), aggregate estimation and above are refused regardless of
-  the numbers, because contamination inflates exactly the statistics those
-  tiers rest on, and LOCO rewards it (the held-out family is published too).
+  evidence supports, each explicitly granted or refused with the reason and
+  the pre-registered numeric threshold it met or missed. **The ladder is
+  enforced literally:** screening requires diagnostics + fake-data recovery +
+  SBC all present and passed, plus an unflagged cell whose new-family
+  predictive reliability clears (median > 0.5, q10 > 0.35); ranking
+  additionally requires LOCO present, hash-bound to this run, covering every
+  family, all fold diagnostics passed, pooled tie-aware Spearman > 0.6 with
+  family-cluster bootstrap lower-90 > 0.5; aggregate estimation additionally
+  requires the PPC (both participant modes) passed and LOCO coverage in
+  [0.75, 0.98]. Missing, failed, or unbound evidence refuses; nothing grants
+  by default. Thresholds are pre-registered decision defaults, not
+  estimand-specific loss analyses, and the certificate says so.
+  **Contamination caps tiers:** a public-benchmark-suspect (or unassessed)
+  item source refuses ranking and above regardless of the numbers, because
+  contamination inflates exactly the statistics those tiers rest on and LOCO
+  rewards it (the held-out family is published too).
+- **Run binding**: every fit writes `run.json` (run id, posterior SHA-256,
+  Stan-file SHA, code commit, input hashes); PPC and LOCO stamp what they
+  read; the warrant refuses evidence whose stamps do not match, so a stale or
+  copied report cannot license a different posterior.
 - `refused_claims`: stated, not implied. E.g. "no evidence for individual-level
   human simulation; no mechanism claims."
 - `residual_risks`: permanent caveats no test in the ladder can discharge,
@@ -270,9 +307,19 @@ wordfreq, pyyaml, click, httpx.
   Passing them is necessary, never sufficient: real data has features the
   simulation lacks (ceiling effects, bounded scales, contamination,
   non-exchangeable raters). The PPC gate exists because of this.
-- **No prior-sensitivity stage in the ladder yet.** The latent scale is
-  identified partly by priors; a sensitivity sweep (halve/double the key prior
-  scales, compare certificate numbers) is v2 work and the certificate says so.
+- **No prior-sensitivity stage in the ladder yet.** The latent scale itself is
+  fixed by the link convention, but absolute location and the variance-component
+  split remain prior-sensitive (see the identification list above); a
+  sensitivity sweep (halve/double the key prior scales, compare certificate
+  numbers) is v2 work and the certificate says so.
+- **Divergence tolerance is 0.5%, not zero.** Stan's strict reading is that
+  any divergence is evidence of unexplored posterior; the gate trades that
+  against realistic run costs and treats a sub-0.5% rate with clean R-hat/ESS
+  as acceptable. The rate is always reported, so a stricter reader can refuse.
+- **LOCO's evaluation target is same-participants-new-items** (raters' posterior
+  effects are used where known). Fresh-population transfer is a different
+  target the v1 ladder does not test; the marginal-mode PPC is the closest
+  check it has.
 - **Nonresponse:** prompted cells produce refusals/parse failures, logged per
   cell by the grid. The warrant reports the failure rate; cells above 10% are
   flagged and cannot support tier grants. Missingness correlated with theta is

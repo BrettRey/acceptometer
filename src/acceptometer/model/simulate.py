@@ -21,6 +21,9 @@ class SimTruth:
     theta: np.ndarray
     mu_c: np.ndarray
     tau_constr: float
+    tau_item: float
+    tau_a: float
+    tau_b: float
     kappa: np.ndarray
     sigma_u: float
     alpha: np.ndarray
@@ -120,13 +123,15 @@ def simulate(
         P=P, X=X.tolist(),
         N_h=len(y), K=K, item_h=item_h.tolist(), N_part=n_part,
         part_h=part_h.tolist(), y=y.tolist(),
+        is_new=[0] * n_constr,
         N_c=len(s), M_c=M_c, item_c=item_c.tolist(), cell_c=cell_c.tolist(),
         s=s.tolist(), has_reps=[1] * M_c,
         N_b=len(z), M_b=M_b, item_b=item_b.tolist(), cell_b=cell_b.tolist(),
         z=z.tolist(),
     )
-    truth = SimTruth(theta, mu_c, tau_constr, kappa, sigma_u,
-                     alpha, beta, gamma, sigma_s, omega_true, a_b, b_b, g_b)
+    truth = SimTruth(theta, mu_c, tau_constr, tau_item, tau_a_true, tau_b_true,
+                     kappa, sigma_u, alpha, beta, gamma, sigma_s, omega_true,
+                     a_b, b_b, g_b)
     return data, truth
 
 
@@ -151,6 +156,17 @@ def recovery_check(idata, truth: SimTruth) -> dict:
     report["beta_post_mean"] = [round(v, 3) for v in be.mean(axis=1)]
     report["beta_truth"] = [round(v, 3) for v in truth.beta]
 
+    for name in ("tau_item", "tau_a", "tau_b"):
+        draws = post[name].stack(d=("chain", "draw")).values
+        truths = np.atleast_1d(getattr(truth, name))
+        draws2 = draws if draws.ndim == 2 else draws[None, :]
+        ok = True
+        for j, tv in enumerate(np.broadcast_to(truths, (draws2.shape[0],))):
+            lo, hi = np.percentile(draws2[j], [2.5, 97.5])
+            ok = ok and (lo <= tv <= hi)
+        report[f"{name}_within_95ci"] = bool(ok)
+        report[f"{name}_post_median"] = [round(float(np.median(d)), 3) for d in draws2]
+
     rel = post["reliability"].stack(d=("chain", "draw")).values.mean(axis=1)
     v_theta = truth.theta.var()
     rel_truth = truth.beta**2 * v_theta / (
@@ -159,7 +175,10 @@ def recovery_check(idata, truth: SimTruth) -> dict:
     report["reliability_max_abs_err"] = round(rel_err, 3)
     report["reliability_truth"] = [round(v, 3) for v in rel_truth]
 
-    report["passed"] = bool(0.80 <= cover <= 0.98 and beta_ok and rel_err <= 0.15)
+    report["passed"] = bool(
+        0.80 <= cover <= 0.98 and beta_ok and rel_err <= 0.15
+        and report["tau_item_within_95ci"] and report["tau_a_within_95ci"]
+        and report["tau_b_within_95ci"])
     return report
 
 

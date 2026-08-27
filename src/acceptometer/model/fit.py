@@ -5,7 +5,10 @@ Nothing downstream (warrant, plots, design) accepts a fit that fails the gate.
 
 from __future__ import annotations
 
+import hashlib
 import json
+import subprocess
+import uuid
 from pathlib import Path
 
 import numpy as np
@@ -22,6 +25,7 @@ def build_stan_data(
     binary: pd.DataFrame | None,      # columns: item_id, cell_id, value (0/1)
     K: int = 7,
     standardize_scores: bool = True,
+    new_families: set | None = None,
 ) -> tuple[dict, dict]:
     """Returns (stan_data, index_maps). index_maps records the id->index
     mappings and per-cell standardization constants so posteriors can be
@@ -36,17 +40,19 @@ def build_stan_data(
     X_sd[X_sd == 0] = 1.0
     Xs = (X - X_mean) / X_sd
 
+    new_families = new_families or set()
     data: dict = dict(
         prior_only=0,
         N_item=len(items),
         N_constr=len(constrs),
         constr=[constr_ix[it.construction] for it in items],
+        is_new=[int(c in new_families) for c in constrs],
         P=Xs.shape[1],
         X=Xs.tolist(),
     )
     maps: dict = dict(
         item_ids=item_ids, constructions=constrs,
-        X_mean=X_mean.tolist(), X_sd=X_sd.tolist(),
+        X_mean=X_mean.tolist(), X_sd=X_sd.tolist(), X_standardized=Xs.tolist(),
         cont_cells=[], bin_cells=[], participants=[], cell_standardization={},
     )
 
@@ -161,7 +167,8 @@ def diagnostics_gate(fit, idata) -> dict:
 
     div = int(np.sum(fit.method_variables()["divergent__"]))
     n_draws = int(np.prod(fit.method_variables()["divergent__"].shape))
-    core = [v for v in ["beta", "sigma_s", "tau_constr", "kappa", "sigma_u", "b_b"]
+    core = [v for v in ["beta", "sigma_s", "tau_constr", "tau_item", "tau_a",
+                        "tau_b", "omega", "kappa", "sigma_u", "b_b"]
             if v in idata.posterior]
     summ = az.summary(idata, var_names=core)
     rhat_max = float(summ["r_hat"].max())
@@ -176,9 +183,39 @@ def diagnostics_gate(fit, idata) -> dict:
     return report
 
 
-def save_fit(idata, maps: dict, report: dict, out_dir: str | Path) -> None:
+def sha256_file(path: str | Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def save_fit(idata, maps: dict, report: dict, out_dir: str | Path,
+             data: dict | None = None, input_hashes: dict | None = None) -> None:
+    """Persist the fit plus a run manifest (run.json) binding the artifacts:
+    downstream evidence writers stamp posterior_sha256 and the warrant refuses
+    evidence whose stamp does not match the posterior it certifies."""
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
     idata.to_netcdf(str(out / "posterior.nc"))
     (out / "index_maps.json").write_text(json.dumps(maps, indent=2))
     (out / "diagnostics.json").write_text(json.dumps(report, indent=2))
+    try:
+        commit = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True,
+                                text=True, cwd=Path(__file__).parent).stdout.strip()
+    except Exception:
+        commit = "unknown"
+    n_crit = 0
+    if data is not None and data.get("N_h", 0) > 0:
+        n_crit = len(set(data["item_h"]))
+    run = {
+        "run_id": str(uuid.uuid4()),
+        "posterior_sha256": sha256_file(out / "posterior.nc"),
+        "stan_sha256": sha256_file(STAN_FILE),
+        "code_commit": commit,
+        "n_items_criterion": n_crit,
+        "n_items_total": len(maps.get("item_ids", [])),
+        "input_hashes": input_hashes or {},
+    }
+    (out / "run.json").write_text(json.dumps(run, indent=2))

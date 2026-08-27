@@ -93,6 +93,7 @@ def _simulate_given(pr, rng, n_constr, items_per_constr, n_part, ratings_per_ite
 
     return dict(
         prior_only=0, N_item=N, N_constr=n_constr, constr=constr.tolist(),
+        is_new=[0] * n_constr,
         P=P, X=X.tolist(),
         N_h=len(y), K=K, item_h=item_h.tolist(), N_part=n_part,
         part_h=part_h.tolist(), y=y.tolist(),
@@ -118,6 +119,7 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
         [f"sigma_s[{m}]" for m in range(1, M_c + 1)]
     ranks: dict[str, list[int]] = {t: [] for t in tracked}
     n_failed = 0
+    n_diag_failed = 0
 
     for r in range(R):
         pr = _draw_prior(rng, n_constr, K, M_c, M_b, P)
@@ -129,6 +131,9 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
         except Exception:
             n_failed += 1
             continue
+        from .fit import diagnostics_gate
+        if not diagnostics_gate(fit, idata)["passed"]:
+            n_diag_failed += 1
         post = idata.posterior
         for t in tracked:
             if "[" in t:
@@ -142,7 +147,8 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
             thinned = draws[::step][:n_thin]
             ranks[t].append(int(np.sum(thinned < truth)))
 
-    report = {"R": R, "n_failed_fits": n_failed, "n_thin": n_thin, "params": {}}
+    report = {"R": R, "n_failed_fits": n_failed,
+              "n_diag_failed": n_diag_failed, "n_thin": n_thin, "params": {}}
     B = 7  # rank bins
     passed = True
     for t, rk in ranks.items():
@@ -163,6 +169,11 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
                                "rank_hist": hist.tolist()}
         if p < 0.005:
             passed = False
+    # a pipeline whose small-data fits routinely fail or misbehave is not
+    # validated by the survivors' rank uniformity
+    if (n_failed + n_diag_failed) > 0.2 * R:
+        passed = False
+        report["failure_note"] = "more than 20% of replications failed or failed diagnostics"
     report["passed"] = passed
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")

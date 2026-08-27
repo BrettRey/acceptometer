@@ -2,19 +2,32 @@
 
 The certificate answers the projectibility question the posterior cannot:
 which claim tiers does the evidence on disk license? Every number in the
-certificate comes from a file actually read out of the run directory;
-missing evidence refuses the dependent tiers, it never grants them.
+certificate comes from a file actually read out of the run directory; missing
+or failed evidence refuses the dependent tiers, it never grants them; and
+evidence is refused unless it is BOUND to the posterior it claims to certify
+(via run.json hashes), so a stale or copied report cannot license a different
+fit.
 
-Files read from run_dir:
-  diagnostics.json     required as evidence (missing refuses every tier)
-  index_maps.json      required (names for cells, items, families)
-  posterior.nc         required (reliability and bias summaries)
-  recovery.json        optional (fake-data recovery report)
-  loco.json            optional (leave-one-construction-out transfer stats)
-  grid_manifest.yaml   optional (contamination record from the grid runner)
-  cont.csv             optional (raw continuous scores written by the fit
-                       and simulate CLI commands; used for the multiverse
-                       spread statistic, which no other artifact carries)
+The validation ladder is enforced literally:
+  screening            needs diagnostics + fake-data recovery + SBC, all
+                       passed, plus an unflagged cell whose NEW-FAMILY
+                       predictive reliability clears the gate (the global
+                       slope ratio is not a warrant quantity: a family slope
+                       deviation changes how much signal that family's scores
+                       carry).
+  ranking              additionally needs LOCO: present, bound, every family
+                       tested, all fold diagnostics passed, pooled tie-aware
+                       Spearman > 0.6 with family-cluster bootstrap lower-90
+                       > 0.5, and contamination assessed clean (LOCO rewards
+                       contamination, so a suspect item source caps ranking
+                       too).
+  aggregate_estimation additionally needs the PPC (present, bound, both
+                       participant modes passed) and LOCO coverage in band.
+  everything above     refused in v1 with reasons; individual simulation and
+                       mechanism claims permanently.
+
+Thresholds are pre-registered decision defaults, not estimand-specific loss
+analyses; the certificate says so.
 """
 
 from __future__ import annotations
@@ -39,46 +52,12 @@ TIERS = (
     "mechanism_claims",
 )
 
-_RANK_TOP_KEYS = ("mean_spearman", "mean_heldout_rank_correlation",
-                  "mean_rank_correlation", "mean_rank_corr")
-_RANK_FOLD_KEYS = ("spearman", "rank_correlation", "rank_corr")
-_COV_TOP_KEYS = ("mean_coverage90", "coverage_90", "interval_coverage_90",
-                 "coverage")
-_COV_FOLD_KEYS = ("coverage90", "coverage_90", "coverage")
-
 
 def _read_json(path: Path) -> dict | None:
     return json.loads(path.read_text()) if path.exists() else None
 
 
-def _loco_stat(loco: dict, top_keys: tuple, fold_keys: tuple) -> float | None:
-    """Pull a scalar from loco.json: a top-level key under any of the known
-    names, else the mean of per-fold values. Returns None when the file
-    carries no recognizable value (which refuses the dependent tier)."""
-    for k in top_keys:
-        v = loco.get(k)
-        if isinstance(v, (int, float)) and not isinstance(v, bool):
-            return float(v)
-    folds = loco.get("per_family") or loco.get("families") or loco.get("folds")
-    if isinstance(folds, dict):
-        folds = list(folds.values())
-    vals: list[float] = []
-    if isinstance(folds, list):
-        for f in folds:
-            if not isinstance(f, dict):
-                continue
-            for k in fold_keys:
-                v = f.get(k)
-                if isinstance(v, (int, float)) and not isinstance(v, bool):
-                    vals.append(float(v))
-                    break
-    return float(np.mean(vals)) if vals else None
-
-
 def _multiverse_spread(run_dir: Path):
-    """Mean over items of the per-item sd of standardized scores across
-    continuous cells, from cont.csv. Scores are z-scored per cell here so
-    the statistic is scale-free whatever scale the file stores."""
     path = run_dir / "cont.csv"
     if not path.exists():
         return "not assessed (no cont.csv in run dir)"
@@ -101,30 +80,7 @@ def _multiverse_spread(run_dir: Path):
     }
 
 
-def _prompt_invariance(cont_cells: list[str], beta_med: np.ndarray):
-    """sd of posterior-median beta across paraphrase cells of the same
-    model and method, identified from cell names of the registered form
-    model/method/paraphrase. Returns a per-group dict, or a string when no
-    such group is identifiable."""
-    groups: dict[str, list[int]] = defaultdict(list)
-    for j, name in enumerate(cont_cells):
-        parts = name.split("/")
-        if len(parts) >= 3:
-            groups["/".join(parts[:2])].append(j)
-    out = {}
-    for g, idxs in sorted(groups.items()):
-        if len(idxs) >= 2:
-            meds = [float(beta_med[j]) for j in idxs]
-            out[g] = {
-                "sd_of_beta_medians": round(float(np.std(meds, ddof=1)), 3),
-                "cells": [cont_cells[j] for j in idxs],
-            }
-    return out if out else "not identifiable from cell names"
-
-
 def _plain(x):
-    """Recursively convert numpy scalars and paths so yaml.safe_dump accepts
-    the certificate."""
     if isinstance(x, dict):
         return {str(k): _plain(v) for k, v in x.items()}
     if isinstance(x, (list, tuple)):
@@ -136,19 +92,35 @@ def _plain(x):
     return x
 
 
+def _bound(child: dict | None, run: dict | None, how: str) -> tuple[bool, str]:
+    """Check an evidence file's binding to the run manifest."""
+    if child is None:
+        return False, "evidence not produced"
+    if run is None:
+        return False, "run.json missing; evidence cannot be bound to a posterior"
+    if how == "posterior":
+        want = run.get("posterior_sha256")
+        got = child.get("posterior_sha256")
+        if got is None:
+            return False, "evidence carries no posterior_sha256 stamp"
+        if got != want:
+            return False, "evidence is stamped for a different posterior"
+    elif how == "inputs":
+        want = run.get("input_hashes") or {}
+        got = child.get("input_hashes") or {}
+        if not got:
+            return False, "evidence carries no input_hashes stamp"
+        shared = set(want) & set(got)
+        if not shared:
+            return False, "evidence and run share no input hashes"
+        for k in shared:
+            if want[k] != got[k]:
+                return False, f"input hash mismatch on {k}"
+    return True, "bound"
+
+
 def build_warrant(run_dir: str | Path, estimand: dict,
                   out_path: str | Path | None = None) -> dict:
-    """Build the validity certificate for one fit and write it as YAML to
-    run_dir/warrant.yaml (or out_path). Returns the certificate dict.
-
-    Granting is conservative and hierarchical: screening needs the
-    diagnostics gate plus at least one cell with reliability median > 0.5;
-    ranking additionally needs LOCO mean held-out rank correlation > 0.6;
-    aggregate estimation additionally needs LOCO 90% interval coverage in
-    [0.75, 0.98]. Effect reproduction and distributional claims are refused
-    in v1; individual simulation and mechanism claims are refused
-    permanently. A missing evidence file refuses the dependent tiers with
-    reason "evidence not produced", never grants them."""
     import arviz as az
 
     run_dir = Path(run_dir)
@@ -161,77 +133,101 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     maps = json.loads(maps_path.read_text())
     idata = az.from_netcdf(str(post_path))
 
+    run = _read_json(run_dir / "run.json")
     diagnostics = _read_json(run_dir / "diagnostics.json")
     recovery = _read_json(run_dir / "recovery.json")
+    sbc = _read_json(run_dir / "sbc.json")
     loco = _read_json(run_dir / "loco.json")
+    ppc = _read_json(run_dir / "ppc.json")
     manifest_path = run_dir / "grid_manifest.yaml"
     manifest = yaml.safe_load(manifest_path.read_text()) if manifest_path.exists() else None
 
+    # ---- instruments: new-family predictive reliability is the gate quantity
     cont_cells = list(maps.get("cont_cells", []))
     instruments = []
-    rel_meds: list[float] = []
-    if cont_cells and "reliability" in idata.posterior:
-        rel = np.asarray(idata.posterior["reliability"].values)
-        rel = rel.reshape(-1, rel.shape[-1])
+    rel_new_stats: dict[str, dict] = {}
+    if cont_cells and "reliability_new" in idata.posterior:
+        rel_new = np.asarray(idata.posterior["reliability_new"].values)
+        rel_new = rel_new.reshape(-1, rel_new.shape[-1])
+        rel_glob = np.asarray(idata.posterior["reliability"].values)
+        rel_glob = rel_glob.reshape(-1, rel_glob.shape[-1])
+        rel_fam = np.asarray(idata.posterior["reliability_family"].values)
+        rel_fam = rel_fam.reshape(-1, rel_fam.shape[-2], rel_fam.shape[-1])
         alpha = np.asarray(idata.posterior["alpha"].values)
         alpha = alpha.reshape(-1, alpha.shape[-1])
-        beta = np.asarray(idata.posterior["beta"].values)
-        beta = beta.reshape(-1, beta.shape[-1])
-        beta_med = np.median(beta, axis=0)
         for j, name in enumerate(cont_cells):
-            med = float(np.median(rel[:, j]))
-            lo, hi = np.percentile(rel[:, j], [5, 95])
-            rel_meds.append(med)
-            instruments.append({
+            med = float(np.median(rel_new[:, j]))
+            q10, q90 = np.percentile(rel_new[:, j], [10, 90])
+            fam_meds = np.median(rel_fam[:, j, :], axis=0)
+            rel_new_stats[name] = {"median": med, "q10": float(q10)}
+            entry = {
                 "cell": name,
-                "reliability_median": round(med, 3),
-                "reliability_90": [round(float(lo), 3), round(float(hi), 3)],
-                "bias_alpha_median": round(float(np.median(alpha[:, j])), 3),
-            })
-        invariance = _prompt_invariance(cont_cells, beta_med)
-    else:
-        invariance = "not identifiable from cell names"
+                "reliability_new_family_median": round(med, 3),
+                "reliability_new_family_80": [round(float(q10), 3), round(float(q90), 3)],
+                "reliability_by_family": {
+                    f: round(float(v), 3)
+                    for f, v in zip(maps.get("constructions", []), fam_meds)
+                },
+                "global_slope_signal_ratio_median": round(
+                    float(np.median(rel_glob[:, j])), 3),
+                "alpha_standardized_median": round(float(np.median(alpha[:, j])), 3),
+                "standardization": maps.get("cell_standardization", {}).get(name,
+                                                                            "none recorded"),
+            }
+            instruments.append(entry)
+
+    # prompt invariance from paraphrase-labeled cell names, if any
+    groups: dict[str, list[str]] = defaultdict(list)
+    for name in cont_cells:
+        parts = name.split("/")
+        if len(parts) >= 3:
+            groups["/".join(parts[:2])].append(name)
+    invariance = ("assessed descriptively at the grid level; paraphrases enter "
+                  "the fit as one instrument, so no model-based invariance "
+                  "statistic exists in this fit" if not groups else groups)
 
     estimand = dict(estimand)
     split_half = estimand.pop("human_split_half", "not provided")
     domain = {
         "construction_families": list(maps.get("constructions", [])),
-        "n_items": len(maps.get("item_ids", [])),
+        "n_items_total": (run or {}).get("n_items_total",
+                                         len(maps.get("item_ids", []))),
+        "n_items_with_human_criterion": (run or {}).get("n_items_criterion",
+                                                        "not recorded"),
     }
     user_domain = estimand.pop("domain", None)
     if isinstance(user_domain, dict):
         domain.update(user_domain)
+    if "population" not in estimand:
+        estimand["population"] = ("the criterion sample's population "
+                                  "(unspecified); population transfer untested")
 
     if isinstance(manifest, dict) and "contamination" in manifest:
         contamination = manifest["contamination"]
     else:
         contamination = "not assessed"
-    # contamination caps tiers: only an explicit clean assessment lifts the
-    # cap, because contamination inflates exactly the statistics the higher
-    # tiers rest on, and LOCO rewards it (the held-out family is public too)
     contamination_clean = (
         contamination == "clean"
         or (isinstance(contamination, dict)
             and contamination.get("status") == "clean"))
 
-    ppc = _read_json(run_dir / "ppc.json")
-    ppc_ok = bool(ppc and ppc.get("passed"))
-
-    # nonresponse: cells with a parse-failure rate above 10% cannot support
-    # tier grants (missingness plausibly correlates with theta)
     nonresponse = (manifest or {}).get("nonresponse") if isinstance(manifest, dict) else None
     flagged_cells = sorted(
         c for c, r in (nonresponse or {}).items()
         if isinstance(r, (int, float)) and r > 0.10)
 
-    rank_corr = _loco_stat(loco, _RANK_TOP_KEYS, _RANK_FOLD_KEYS) if loco else None
-    coverage = _loco_stat(loco, _COV_TOP_KEYS, _COV_FOLD_KEYS) if loco else None
+    loco_ok, loco_bind_reason = _bound(loco, run, "inputs")
+    ppc_ok_bind, ppc_bind_reason = _bound(ppc, run, "posterior")
 
     evidence = {
+        "run": run if run is not None else "not produced",
         "diagnostics": diagnostics if diagnostics is not None else "not produced",
         "fake_data_recovery": recovery if recovery is not None else "not produced",
+        "sbc": sbc if sbc is not None else "not produced",
         "loco_transfer": loco if loco is not None else "not produced",
+        "loco_binding": loco_bind_reason,
         "ppc": ppc if ppc is not None else "not produced",
+        "ppc_binding": ppc_bind_reason,
         "multiverse_spread": _multiverse_spread(run_dir),
         "prompt_invariance": invariance,
         "human_split_half": split_half,
@@ -240,17 +236,26 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             nonresponse if nonresponse is not None else "not recorded"),
         "flagged_cells": flagged_cells or "none",
         "generalization_axes": {
-            "tested": ["construction_family (LOCO-CV, purposive family sample; "
-                       "descriptive over the families tested)"],
+            "tested": (["construction_family (LOCO-CV, purposive family "
+                        "sample; descriptive over the families tested)"]
+                       if loco is not None else []),
             "untested": ["population", "register", "language", "item_source",
-                         "time", "model_version (beyond drift sentinels)"],
+                         "time", "model_version (beyond drift sentinels)"]
+                        + ([] if loco is not None else ["construction_family"]),
         },
+        "threshold_status": ("pre-registered decision defaults; not yet "
+                             "estimand-specific loss analyses"),
     }
 
     licensed: dict[str, str] = {}
     refused: dict[str, str] = {}
-    diag_ok = bool(diagnostics and diagnostics.get("passed"))
-    max_rel = max(rel_meds) if rel_meds else None
+
+    # ---- screening: full ladder prerequisite + unflagged predictive reliability
+    diag_ok = bool(diagnostics and diagnostics.get("passed") is True)
+    rec_ok = bool(recovery and recovery.get("passed") is True)
+    sbc_ok = bool(sbc and sbc.get("passed") is True)
+    candidates = {c: v for c, v in rel_new_stats.items() if c not in flagged_cells}
+    best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
 
     if diagnostics is None:
         refused["screening"] = "evidence not produced: diagnostics.json missing"
@@ -259,60 +264,85 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             f"diagnostics gate failed (rhat_max={diagnostics.get('rhat_max')}, "
             f"divergence_rate={diagnostics.get('divergence_rate')}, "
             f"ess_bulk_min={diagnostics.get('ess_bulk_min')})")
-    elif max_rel is None:
-        refused["screening"] = ("evidence not produced: no continuous cell "
-                                "carries a posterior reliability")
-    elif max_rel > 0.5:
-        licensed["screening"] = (f"diagnostics passed and max cell reliability "
-                                 f"median {max_rel:.2f} > 0.5")
+    elif recovery is None:
+        refused["screening"] = "evidence not produced: recovery.json missing (ladder step 1)"
+    elif not rec_ok:
+        refused["screening"] = "fake-data recovery failed (ladder step 1)"
+    elif sbc is None:
+        refused["screening"] = "evidence not produced: sbc.json missing (ladder step 2)"
+    elif not sbc_ok:
+        refused["screening"] = "SBC failed (ladder step 2)"
+    elif best is None:
+        refused["screening"] = ("no unflagged continuous cell carries a "
+                                "new-family predictive reliability")
+    elif best[1]["median"] > 0.5 and best[1]["q10"] > 0.35:
+        licensed["screening"] = (
+            f"full ladder passed and cell {best[0]} new-family predictive "
+            f"reliability median {best[1]['median']:.2f} > 0.5 with "
+            f"q10 {best[1]['q10']:.2f} > 0.35")
     else:
-        refused["screening"] = (f"max cell reliability median {max_rel:.2f} "
-                                f"does not exceed 0.5")
+        refused["screening"] = (
+            f"best unflagged cell {best[0]}: new-family predictive reliability "
+            f"median {best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} "
+            f"(need median > 0.5 and q10 > 0.35)")
 
+    # ---- ranking
+    all_fams = set(maps.get("constructions", []))
     if "screening" not in licensed:
         refused["ranking"] = "refused because screening is not granted"
     elif loco is None:
         refused["ranking"] = "evidence not produced: loco.json missing"
-    elif rank_corr is None:
-        refused["ranking"] = ("evidence not produced: loco.json carries no "
-                              "held-out rank correlation")
-    elif rank_corr > 0.6:
-        licensed["ranking"] = (f"screening granted and LOCO mean held-out rank "
-                               f"correlation {rank_corr:.2f} > 0.6")
+    elif not loco_ok:
+        refused["ranking"] = f"LOCO evidence not bound to this run: {loco_bind_reason}"
+    elif not loco.get("all_diagnostics_passed"):
+        refused["ranking"] = "one or more LOCO fold fits failed diagnostics"
+    elif set(loco.get("families_tested", [])) != all_fams:
+        missing = sorted(all_fams - set(loco.get("families_tested", [])))
+        refused["ranking"] = f"LOCO did not cover every family (missing: {missing})"
+    elif not contamination_clean:
+        refused["ranking"] = (
+            "contamination cap: item source not assessed clean; contamination "
+            "inflates the held-out rank statistic itself (LOCO rewards it)")
+    elif (loco.get("pooled_spearman") or -1) > 0.6 and \
+         (loco.get("pooled_spearman_cluster_boot_lower90") or -1) > 0.5:
+        licensed["ranking"] = (
+            f"pooled tie-aware held-out Spearman "
+            f"{loco['pooled_spearman']:.2f} > 0.6 with family-cluster "
+            f"bootstrap lower-90 {loco['pooled_spearman_cluster_boot_lower90']:.2f} > 0.5")
     else:
-        refused["ranking"] = (f"LOCO mean held-out rank correlation "
-                              f"{rank_corr:.2f} does not exceed 0.6")
+        refused["ranking"] = (
+            f"pooled held-out Spearman {loco.get('pooled_spearman')} "
+            f"(lower-90 {loco.get('pooled_spearman_cluster_boot_lower90')}) "
+            "does not clear (0.6, 0.5)")
 
+    # ---- aggregate estimation
+    coverage = loco.get("mean_coverage90") if loco else None
     if "ranking" not in licensed:
         refused["aggregate_estimation"] = "refused because ranking is not granted"
-    elif not contamination_clean:
-        refused["aggregate_estimation"] = (
-            "contamination cap: item source not explicitly assessed clean "
-            f"(status: {contamination if isinstance(contamination, str) else contamination.get('status', 'unknown')}); "
-            "contamination inflates exactly the statistics this tier rests on, "
-            "and LOCO rewards it")
-    elif ppc is not None and not ppc_ok:
+    elif ppc is None:
+        refused["aggregate_estimation"] = "evidence not produced: ppc.json missing (ladder step 4)"
+    elif not ppc_ok_bind:
+        refused["aggregate_estimation"] = f"PPC evidence not bound to this run: {ppc_bind_reason}"
+    elif not ppc.get("passed"):
         refused["aggregate_estimation"] = (
             "posterior predictive check failed; the human arm misfits the "
             "criterion data, so aggregate predictions inherit unquantified bias")
     elif coverage is None:
-        refused["aggregate_estimation"] = ("evidence not produced: loco.json "
-                                           "carries no 90% interval coverage")
+        refused["aggregate_estimation"] = "loco.json carries no 90% interval coverage"
     elif 0.75 <= coverage <= 0.98:
-        licensed["aggregate_estimation"] = (f"LOCO 90% interval coverage "
-                                            f"{coverage:.2f} within [0.75, 0.98], "
-                                            "contamination assessed clean"
-                                            + ("" if ppc is None else ", PPC passed"))
+        licensed["aggregate_estimation"] = (
+            f"LOCO 90% interval coverage {coverage:.2f} within [0.75, 0.98], "
+            "PPC passed in both participant modes, contamination assessed clean")
     else:
-        refused["aggregate_estimation"] = (f"LOCO 90% interval coverage "
-                                           f"{coverage:.2f} outside [0.75, 0.98]")
+        refused["aggregate_estimation"] = (
+            f"LOCO 90% interval coverage {coverage:.2f} outside [0.75, 0.98]")
 
     refused["effect_reproduction"] = ("not yet tested: requires matched "
                                       "experimental contrasts")
     refused["distributional_claims"] = (
         "no participant-level validation of variance structure"
-        + ("" if ppc is None or ppc_ok
-           else "; posterior predictive check on disagreement structure failed"))
+        + ("" if ppc is None or ppc.get("passed")
+           else "; posterior predictive check failed"))
     refused["population_transfer"] = (
         "refused: the v1 ladder contains no population-transfer test; the "
         "estimand population defaults to the criterion sample's own")
@@ -322,13 +352,11 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     refused["mechanism_claims"] = ("refused permanently: the model estimates a "
                                    "linking function, not a mechanism")
 
-    if "population" not in estimand:
-        estimand["population"] = ("the criterion sample's population "
-                                  "(unspecified); population transfer untested")
-
     cert = _plain({
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "run_dir": str(run_dir),
+        "run_id": (run or {}).get("run_id", "not recorded"),
+        "posterior_sha256": (run or {}).get("posterior_sha256", "not recorded"),
         "estimand": estimand,
         "domain": domain,
         "instruments": instruments,
@@ -339,8 +367,10 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             "shared pretraining bias: local instruments share web-scale "
             "training data and can share construction-specific error; a tight "
             "multiverse fan does not rule this out",
-            "conditional reliability is fit- and item-set-specific; it goes "
+            "reliability quantities are fit- and item-set-specific; they go "
             "stale when the item pool changes",
+            "thresholds are pre-registered defaults, not estimand-specific "
+            "loss analyses",
         ],
     })
 
