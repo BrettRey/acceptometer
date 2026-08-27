@@ -115,6 +115,42 @@ zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
 rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
 population-transfer test, temporal drift evidence.
 
+2026-08-27 — Assurance machinery folded in from Brett's AI-safety papers
+(adversarial-pragmatics / delegation-assurance / evidentiary-assurance /
+ai-evaluation-kinds), at Brett's direction after the cross-reading: (1)
+frozen versioned threshold spec (src/acceptometer/thresholds.yaml + spec.py);
+diagnostics, SBC, PPC, and warrant gates all read it, and certificates cite
+spec_version + SHA (delegation-assurance's frozen-specification practice);
+(2) the certificate is now a LICENCE WITH A LIFE-CYCLE (ai-evaluation-kinds):
+status, issuer, expiry conditions (instrument/item/model change), erosion
+conditions (Goodhart against the gate statistics), defeat/supersession, and
+a contestation route; (3) each licensed claim carries the four
+projective-claim blocks (declaration / projectibility profile / warrant /
+defeaters), with the profile supplied by the analyst in estimand.yaml as a
+stated HYPOTHESIS, never fused with the warrant (the shared claim-types
+protocol); (4) refusals are typed with remedies per evidentiary-assurance's
+verdict separation: unevaluable / shortfall / affirmative_failure / vitiated
+/ structural; (5) answerability: issued_by named, contestation route stated;
+Robodebt residual risk recorded (binding integrity is not construct
+validity); (6) response-style evidence module (scripts/response_evidence.py)
+from adversarial-pragmatics' minority-class and label-omission lessons.
+
+2026-08-27 — Marginal-stratum finding (first output of the new evidence
+module): qwen's aggregate r = .72 with human item means collapses to r = .18
+on the 47 contested-band items (human mean in [3,5]) and rises to .85
+outside it; Pythia SLOR is -.18 in the band. The aggregate correlation is
+carried by the easy items. Category usage: humans spread across the scale
+(peak at 7); qwen hedges (peaks at 2 and 6, avoids extremes and middle).
+Consequence for use: the instrument profile fits triage (screen clear cases,
+spend humans on the middle band, which is what design.py allocates), and any
+marginal-item claim is unsupported. Reported under descriptive_findings.
+
+2026-08-27 — SBC per-fit sanity checks moved to 4 chains (500/500) after the
+2-chain run failed the tightened 10% cap with 19 scattered (non-concentrated)
+diagnostic failures, consistent with 2-chain R-hat noise rather than a
+geometry pathology. The pipeline's stop-at-first-failed-gate behavior worked
+as designed.
+
 2026-08-27 — Third external review (GPT-family, via Brett) triaged; verdict
 accepted: the screening grant is withdrawn and the pilot certificate licenses
 no deployment tier (descriptive findings only). Adopted: (1) reliability_new

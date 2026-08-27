@@ -166,9 +166,14 @@ def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
 
 
 def diagnostics_gate(fit, idata) -> dict:
-    """Hard gate: divergences < 0.5%, max R-hat < 1.01, min bulk ESS > 400
-    on core parameters. Returns report dict with `passed`."""
+    """Hard gate on core parameters; thresholds come from the frozen spec
+    (thresholds.yaml). Divergence tolerance is deliberately nonzero: Stan's
+    strict reading is that any divergence is suspect, and the rate is always
+    reported so a stricter reader can refuse. Returns report with `passed`."""
     import arviz as az
+
+    from ..spec import load_spec
+    g = load_spec()["diagnostics"]
 
     div = int(np.sum(fit.method_variables()["divergent__"]))
     n_draws = int(np.prod(fit.method_variables()["divergent__"].shape))
@@ -186,7 +191,9 @@ def diagnostics_gate(fit, idata) -> dict:
         "divergence_rate": round(div / n_draws, 4),
         "rhat_max": round(rhat_max, 4),
         "ess_bulk_min": int(ess_min),
-        "passed": bool(div / n_draws < 0.005 and rhat_max < 1.01 and ess_min > 400),
+        "passed": bool(div / n_draws < g["divergence_rate_max"]
+                       and rhat_max < g["rhat_max"]
+                       and ess_min > g["ess_bulk_min"]),
     }
     return report
 

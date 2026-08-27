@@ -130,7 +130,7 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
                                ratings_per_item, K, M_c, M_b, P)
         try:
             fit, idata = fit_model(data, seed=seed + r, iter_warmup=500,
-                                   iter_sampling=500, chains=2)
+                                   iter_sampling=500, chains=4)
         except Exception:
             n_failed += 1
             continue
@@ -193,9 +193,12 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
     # a pipeline whose small-data fits routinely fail or misbehave is not
     # validated by the survivors' rank uniformity
     report["failed_fit_truths"] = failed_truths
-    if (n_failed + n_diag_failed) > 0.1 * R:
+    from ..spec import load_spec
+    cap = load_spec()["sbc"]["failure_frac_max"]
+    if (n_failed + n_diag_failed) > cap * R:
         passed = False
-        report["failure_note"] = "more than 10% of replications failed or failed diagnostics"
+        report["failure_note"] = (f"more than {cap:.0%} of replications failed "
+                                  "or failed diagnostics")
     report["passed"] = passed
     from .fit import STAN_FILE, sha256_file
     report["stan_sha256"] = sha256_file(STAN_FILE)

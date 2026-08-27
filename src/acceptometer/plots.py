@@ -76,7 +76,7 @@ def reliability_forest(idata, maps: dict, path: str | Path) -> Path:
     ax.set_xlim(0.0, 1.0)
     ax.set_yticks(y)
     ax.set_yticklabels([names[i] for i in order], fontsize=8)
-    ax.set_xlabel("instrument reliability (share of score variance carried by theta)")
+    ax.set_xlabel("global-slope signal ratio (descriptive; not a warrant quantity)")
     return _save(fig, path)
 
 

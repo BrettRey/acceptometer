@@ -184,6 +184,24 @@ ordered cutpoints with normal(0,2) prior. No flat priors anywhere.
 
 ## The warrant certificate (`warrant.yaml`)
 
+The certificate implements the assurance structure of the portfolio's
+AI-safety papers. A grant is an inference licence with a life-cycle
+(ai-evaluation-kinds): the `licence` block states issuer, threshold-spec
+version and hash, expiry conditions (instrument, item-pool, or model change),
+erosion conditions (optimizing anything against the certificate's own gate
+statistics vitiates them), defeat/supersession, and a contestation route.
+Each licensed claim carries the four projective-claim blocks from the shared
+claim-types protocol: declaration (bearer, unit, population, range,
+time/version), the analyst's stated projectibility profile (a hypothesis,
+never fused with the warrant), the warrant itself, and defeaters. Refusals
+are typed with remedies per evidentiary-assurance's verdict separation:
+`unevaluable` (produce the evidence), `shortfall` (adequate evidence, gate
+missed), `affirmative_failure` (fix the model), `vitiated` (contamination),
+`structural` (outside the design's claim space). Thresholds live in a frozen
+versioned spec (`thresholds.yaml`), cited by version and SHA-256; changing a
+gate is a spec revision, never a silent code edit.
+
+
 Machine-readable and human-auditable. Fields:
 
 - `estimand`: population, response scale, context (e.g. "mean 7-point rating,

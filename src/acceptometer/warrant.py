@@ -5,28 +5,35 @@ which claims does the evidence on disk license? Principles, enforced in code:
 
 - Every number comes from a file actually read; missing or failed evidence
   refuses dependent claims, never grants them.
-- Evidence binds to the posterior it certifies by RECOMPUTED hashes: the
-  warrant rehashes posterior.nc, the Stan source, index_maps.json, and the
-  grid manifest, and requires exact input-hash-map equality for LOCO. A
-  swapped posterior, edited manifest, or stale report invalidates.
-- Contamination caps EVERY deployment tier, screening included: exposure to
-  published items can inflate the fitted slope and the stable instrument
-  opinion exactly where the screening statistic looks, so a suspect source
-  supports descriptive findings only.
-- Claims are a matrix, not a ladder: within-family ranking, family location,
-  and aggregate estimation carry independent evidence requirements (aggregate
-  no longer presupposes ranking).
-- New-family quantities are model-based extrapolations conditional on
-  exchangeability of construction families, which are purposive; the
-  certificate says so wherever they appear, and uses the sign-aware
-  directional reliability (a reversed-slope draw counts as zero signal, not
-  as squared signal).
-- Absolute location of a family with no human anchor is prior-identified
-  (delta-invariance against per-cell family intercepts), so unanchored
-  family-location claims are refused structurally.
+- Evidence binds by RECOMPUTED hashes (posterior, Stan source, exact
+  input-hash maps); a swapped posterior, edited manifest, or stale report
+  invalidates.
+- Contamination vitiates every deployment tier, screening included.
+- Claims are a matrix, not a ladder; aggregate estimation does not presuppose
+  ranking and carries a sharpness gate.
+- New-family quantities are sign-aware and labeled as model-based
+  extrapolations conditional on family exchangeability.
+- Absolute location of an unanchored family is prior-identified, so those
+  claims are refused structurally.
 
-Thresholds are pre-registered decision defaults, not estimand-specific loss
-analyses; the certificate says that too.
+Assurance structure adopted from the portfolio's AI-safety papers:
+
+- A grant is a LICENCE WITH A LIFE-CYCLE (ai-evaluation-kinds): the
+  certificate states what expires it, what erodes it (optimization against
+  its own gate statistics), and what defeats or supersedes it, instead of
+  pretending issuance is the end of the story.
+- Each licensed claim carries the four projective-claim blocks (declaration,
+  projectibility profile, warrant, defeaters), and the profile is the
+  analyst's stated hypothesis, never fused with the warrant.
+- Refusals are TYPED with remedies (evidentiary-assurance): an unevaluable
+  record, an adequate record whose showing falls short, affirmative evidence
+  of failure, a vitiated source, and a structural impossibility call for
+  different responses, so the certificate distinguishes them.
+- The certificate names an answerable issuer and a concrete contestation
+  route (evidentiary-assurance's answerability and forum questions, scaled
+  to a research artifact).
+- Thresholds come from a frozen, versioned spec (thresholds.yaml), cited by
+  version and hash (delegation-assurance's frozen-specification practice).
 """
 
 from __future__ import annotations
@@ -40,6 +47,7 @@ import pandas as pd
 import yaml
 
 from .model.fit import STAN_FILE, sha256_file
+from .spec import load_spec, spec_identity
 
 TIERS = (
     "screening",
@@ -52,6 +60,17 @@ TIERS = (
     "individual_simulation",
     "mechanism_claims",
 )
+
+# refusal types, per the evidentiary-assurance verdict separation
+UNEVALUABLE = "unevaluable"            # evidence missing or unbound
+SHORTFALL = "shortfall"                # adequate evidence, gate not met
+AFFIRMATIVE = "affirmative_failure"    # evidence of failure
+VITIATED = "vitiated"                  # evidence bearing undermined (contamination)
+STRUCTURAL = "structural"              # unsupportable in this design
+
+
+def _refuse(reason: str, rtype: str, remedy: str) -> dict:
+    return {"type": rtype, "reason": reason, "remedy": remedy}
 
 
 def _read_json(path: Path) -> dict | None:
@@ -97,6 +116,7 @@ def build_warrant(run_dir: str | Path, estimand: dict,
                   out_path: str | Path | None = None) -> dict:
     import arviz as az
 
+    spec = load_spec()
     run_dir = Path(run_dir)
     maps_path = run_dir / "index_maps.json"
     post_path = run_dir / "posterior.nc"
@@ -117,6 +137,7 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     manifest_path = run_dir / "grid_manifest.yaml"
     manifest = yaml.safe_load(manifest_path.read_text()) if manifest_path.exists() else None
     provenance = _read_json(run_dir / "instruments.json")
+    response_style = _read_json(run_dir / "response_style.json")
 
     # ---- recomputed binding: trust nothing declared, rehash what exists
     binding: dict[str, str] = {}
@@ -161,8 +182,8 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         return ok
 
     def _bound_stan(child: dict | None, name: str) -> bool:
-        """Simulation-based evidence (recovery, SBC, newfam) certifies the
-        MODEL, not a posterior: it binds through the Stan source hash."""
+        """Simulation-based evidence certifies the MODEL, not a posterior:
+        it binds through the Stan source hash."""
         if child is None:
             binding[name] = "not produced"
             return False
@@ -223,6 +244,8 @@ def build_warrant(run_dir: str | Path, estimand: dict,
 
     estimand = dict(estimand)
     split_half = estimand.pop("human_split_half", "not provided")
+    issued_by = estimand.pop("issued_by", "not named")
+    profiles = estimand.pop("profiles", {}) or {}
     domain = {
         "construction_families": list(maps.get("constructions", [])),
         "n_items_total": (run or {}).get("n_items_total",
@@ -247,9 +270,10 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             and contamination.get("status") == "clean"))
 
     nonresponse = (manifest or {}).get("nonresponse") if isinstance(manifest, dict) else None
+    flag_rate = spec["nonresponse_flag_rate"]
     flagged_cells = sorted(
         c for c, r in (nonresponse or {}).items()
-        if isinstance(r, (int, float)) and r > 0.10)
+        if isinstance(r, (int, float)) and r > flag_rate)
 
     inst_ppc = (ppc or {}).get("instrument_ppc") if ppc else None
 
@@ -276,143 +300,219 @@ def build_warrant(run_dir: str | Path, estimand: dict,
                          "time", "model_version (beyond drift sentinels)"]
                         + ([] if loco is not None else ["construction_family"]),
         },
-        "threshold_status": ("pre-registered decision defaults; not yet "
-                             "estimand-specific loss analyses"),
     }
 
-    licensed: dict[str, str] = {}
-    refused: dict[str, str] = {}
+    licensed: dict[str, dict] = {}
+    refused: dict[str, dict] = {}
 
     # ---- shared prerequisites for ANY instrument-based deployment claim
     diag_ok = bool(diagnostics and diagnostics.get("passed") is True)
-    prereq_fail = None
+    prereq: tuple[str, str, str] | None = None   # (reason, type, remedy)
     if not bound_core:
-        prereq_fail = f"run binding failed ({binding['run']})"
+        prereq = (f"run binding failed ({binding['run']})", UNEVALUABLE,
+                  "regenerate run.json alongside the posterior it describes")
     elif not diag_ok:
-        prereq_fail = "diagnostics gate not passed"
-    elif not (rec_bound and recovery.get("passed") is True):
-        prereq_fail = f"fake-data recovery: {binding['recovery']}" \
-            if not rec_bound else "fake-data recovery failed"
-    elif not (sbc_bound and sbc.get("passed") is True):
-        prereq_fail = f"SBC: {binding['sbc']}" if not sbc_bound else "SBC failed"
-    elif not (newfam_bound and newfam.get("passed") is True):
-        prereq_fail = (f"new-family simulated recovery: {binding['newfam']}"
-                       if not newfam_bound
-                       else "new-family simulated recovery failed")
-    elif not (ppc_bound and ppc.get("passed") is True):
-        prereq_fail = (f"PPC: {binding['ppc']}" if not ppc_bound
-                       else "PPC failed (human or instrument arm)")
+        prereq = ("diagnostics gate not passed", AFFIRMATIVE,
+                  "fix sampling (iterations, adapt_delta, model) and refit")
+    elif recovery is None or not rec_bound:
+        prereq = (f"fake-data recovery: {binding['recovery']}", UNEVALUABLE,
+                  "run recovery against the current model")
+    elif recovery.get("passed") is not True:
+        prereq = ("fake-data recovery failed", AFFIRMATIVE,
+                  "the pipeline cannot recover known truth; fix before any claim")
+    elif sbc is None or not sbc_bound:
+        prereq = (f"SBC: {binding['sbc']}", UNEVALUABLE,
+                  "run SBC against the current model")
+    elif sbc.get("passed") is not True:
+        prereq = ("SBC failed", AFFIRMATIVE,
+                  "rank calibration or fit stability is broken; fix before any claim")
+    elif newfam is None or not newfam_bound:
+        prereq = (f"new-family simulated recovery: {binding['newfam']}",
+                  UNEVALUABLE, "run newfam_check against the current model")
+    elif newfam.get("passed") is not True:
+        prereq = ("new-family simulated recovery failed", AFFIRMATIVE,
+                  "the branch every new-family claim uses is miscalibrated")
+    elif ppc is None or not ppc_bound:
+        prereq = (f"PPC: {binding['ppc']}", UNEVALUABLE,
+                  "run the PPC against this posterior")
+    elif not ppc.get("passed"):
+        prereq = ("PPC failed (human or instrument arm)", AFFIRMATIVE,
+                  "the fitted model misfits the criterion data; revise the model")
     elif inst_ppc is None or not inst_ppc.get("passed"):
-        prereq_fail = "instrument-arm posterior predictive check absent or failed"
+        prereq = ("instrument-arm posterior predictive check absent or failed",
+                  AFFIRMATIVE if inst_ppc else UNEVALUABLE,
+                  "the measurement model must fit before instrument claims")
 
-    contamination_msg = (
+    vitiation = _refuse(
         "contamination cap: item source not assessed clean; exposure to "
         "published items can inflate the fitted slope and stable instrument "
-        "opinion exactly where this claim's statistic looks. A post-cutoff, "
-        "unpublished validation set is required")
+        "opinion exactly where this claim's statistic looks",
+        VITIATED,
+        "validate on a post-cutoff, unpublished item set with fresh norms")
+
+    def _declaration(cell: str | None) -> dict:
+        prov = "not recorded"
+        if cell:
+            for inst in instruments:
+                if inst["cell"] == cell:
+                    prov = inst.get("provenance", "not recorded")
+        return {
+            "bearer": cell or "instrument set",
+            "unit": "item (decontextualized sentence)",
+            "population": estimand.get("population"),
+            "range": {"families": domain["construction_families"],
+                      "item_source": domain.get("item_source", "see domain")},
+            "time_version": {"posterior_sha256": posterior_sha,
+                             "instrument_provenance": prov},
+        }
+
+    DEFEATERS = [
+        "contamination discovered for the item source (vitiates retroactively)",
+        "instrument version change (weights, digest, or serving stack)",
+        "item-pool or criterion-data change (hashes in run.json)",
+        "a failed re-validation or stronger contrary result (defeats)",
+        "optimization of prompts, models, or items against this certificate's "
+        "gate statistics (Goodhart erosion; vitiates the statistic)",
+    ]
+
+    def _grant(claim: str, cell: str | None, basis: str) -> None:
+        licensed[claim] = {
+            "basis": basis + f" [spec {spec['spec_version']}]",
+            "declaration": _declaration(cell),
+            "projectibility_profile": profiles.get(
+                claim,
+                "not stated by the analyst: without a stated profile (the "
+                "worldly pattern that would make this inference "
+                "non-accidental) the grant is evidence-only"),
+            "defeaters": DEFEATERS,
+        }
 
     # ---- screening
+    g = spec["screening"]
     candidates = {c: v for c, v in gate_stats.items() if c not in flagged_cells}
     best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
-    if prereq_fail:
-        refused["screening"] = prereq_fail
+    if prereq:
+        refused["screening"] = _refuse(*prereq)
     elif not contamination_clean:
-        refused["screening"] = contamination_msg
+        refused["screening"] = vitiation
     elif best is None:
-        refused["screening"] = ("no unflagged continuous cell carries the "
-                                "directional new-family quantities")
-    elif (best[1]["p_pos"] >= 0.95 and best[1]["median"] > 0.5
-          and best[1]["q10"] > 0.35):
-        licensed["screening"] = (
-            f"prerequisites passed; cell {best[0]}: P(new-family slope "
-            f"positive) {best[1]['p_pos']:.2f} >= 0.95, directional "
-            f"reliability median {best[1]['median']:.2f} > 0.5, q10 "
-            f"{best[1]['q10']:.2f} > 0.35 (model-based extrapolation "
-            f"conditional on family exchangeability)")
+        refused["screening"] = _refuse(
+            "no unflagged continuous cell carries the directional new-family "
+            "quantities", UNEVALUABLE, "fit at least one unflagged instrument cell")
+    elif (best[1]["p_pos"] >= g["p_pos_min"] and best[1]["median"] > g["rel_median_min"]
+          and best[1]["q10"] > g["rel_q10_min"]):
+        _grant("screening", best[0],
+               f"prerequisites passed; cell {best[0]}: P(new-family slope "
+               f"positive) {best[1]['p_pos']:.2f} >= {g['p_pos_min']}, "
+               f"directional reliability median {best[1]['median']:.2f} > "
+               f"{g['rel_median_min']}, q10 {best[1]['q10']:.2f} > {g['rel_q10_min']}")
     else:
-        refused["screening"] = (
+        refused["screening"] = _refuse(
             f"best unflagged cell {best[0]}: P(positive slope) "
             f"{best[1]['p_pos']:.2f}, directional reliability median "
-            f"{best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} "
-            f"(need >= 0.95, > 0.5, > 0.35)")
+            f"{best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} (need >= "
+            f"{g['p_pos_min']}, > {g['rel_median_min']}, > {g['rel_q10_min']})",
+            SHORTFALL, "stronger instrument or more criterion data")
 
     # ---- within-family ranking
+    g = spec["ranking_within_family"]
     all_fams = set(maps.get("constructions", []))
-    within_ok = (loco is not None
-                 and (loco.get("mean_spearman") or -1) > 0.6
-                 and (loco.get("frac_families_within_spearman_gt_0.3") or 0) >= 0.8)
-    if prereq_fail:
-        refused["ranking_within_family"] = prereq_fail
+    if prereq:
+        refused["ranking_within_family"] = _refuse(*prereq)
     elif loco is None:
-        refused["ranking_within_family"] = "evidence not produced: loco.json missing"
+        refused["ranking_within_family"] = _refuse(
+            "loco.json missing", UNEVALUABLE, "run LOCO for this run's inputs")
     elif not loco_bound:
-        refused["ranking_within_family"] = f"LOCO not bound: {binding['loco']}"
+        refused["ranking_within_family"] = _refuse(
+            f"LOCO not bound: {binding['loco']}", UNEVALUABLE,
+            "re-run LOCO against the current inputs")
     elif not loco.get("all_diagnostics_passed"):
-        refused["ranking_within_family"] = "one or more LOCO fold fits failed diagnostics"
+        refused["ranking_within_family"] = _refuse(
+            "one or more LOCO fold fits failed diagnostics", AFFIRMATIVE,
+            "raise fold iterations or fix the model, then re-run LOCO")
     elif set(loco.get("families_tested", [])) != all_fams:
         missing = sorted(all_fams - set(loco.get("families_tested", [])))
-        refused["ranking_within_family"] = f"LOCO did not cover every family (missing: {missing})"
+        refused["ranking_within_family"] = _refuse(
+            f"LOCO did not cover every family (missing: {missing})",
+            UNEVALUABLE, "run the missing folds")
     elif not contamination_clean:
-        refused["ranking_within_family"] = contamination_msg
-    elif within_ok:
-        licensed["ranking_within_family"] = (
-            f"mean within-family held-out Spearman "
-            f"{loco['mean_spearman']:.2f} > 0.6 and "
-            f"{loco['frac_families_within_spearman_gt_0.3']:.0%} of families "
-            f"> 0.3 (min {loco.get('within_family_spearman_min')})")
+        refused["ranking_within_family"] = vitiation
+    elif ((loco.get("mean_spearman") or -1) > g["mean_spearman_min"]
+          and (loco.get("frac_families_within_spearman_gt_0.3") or 0)
+          >= g["frac_families_gt_0p3_min"]):
+        _grant("ranking_within_family", None,
+               f"mean within-family held-out Spearman "
+               f"{loco['mean_spearman']:.2f} > {g['mean_spearman_min']} and "
+               f"{loco['frac_families_within_spearman_gt_0.3']:.0%} of "
+               f"families > 0.3 (min {loco.get('within_family_spearman_min')})")
     else:
-        refused["ranking_within_family"] = (
+        refused["ranking_within_family"] = _refuse(
             f"within-family transfer insufficient: mean Spearman "
             f"{loco.get('mean_spearman')}, "
-            f"{(loco.get('frac_families_within_spearman_gt_0.3') or 0):.0%} of "
-            f"families > 0.3, min {loco.get('within_family_spearman_min')}")
+            f"{(loco.get('frac_families_within_spearman_gt_0.3') or 0):.0%} "
+            f"of families > 0.3, min {loco.get('within_family_spearman_min')}",
+            SHORTFALL, "stronger instrument, more families, or more items per family")
 
     # ---- family location for unanchored families: structurally refused
-    refused["family_location_unanchored"] = (
-        "refused structurally: for a family with no human anchor items, "
-        "absolute location is prior-identified, not likelihood-identified "
-        "(shifting the family mean by delta and each cell's family intercept by "
-        "-slope*delta leaves the instrument likelihood unchanged); collect "
-        "anchor items or accept within-family claims only")
+    refused["family_location_unanchored"] = _refuse(
+        "absolute location of a family with no human anchor is "
+        "prior-identified, not likelihood-identified (delta-invariance "
+        "against per-cell family intercepts)",
+        STRUCTURAL, "collect human anchor items in each new family, or accept "
+        "within-family claims only")
 
-    # ---- aggregate estimation (independent of ranking; needs sharpness too)
+    # ---- aggregate estimation (independent of ranking; sharpness-aware)
+    g = spec["aggregate_estimation"]
     coverage = loco.get("mean_coverage90") if loco else None
     rmse = loco.get("mean_rmse") if loco else None
     sd_obs = loco.get("sd_observed_item_means") if loco else None
-    if prereq_fail:
-        refused["aggregate_estimation"] = prereq_fail
+    lo_band, hi_band = g["coverage_band"]
+    if prereq:
+        refused["aggregate_estimation"] = _refuse(*prereq)
     elif loco is None or not loco_bound or not loco.get("all_diagnostics_passed"):
-        refused["aggregate_estimation"] = "LOCO evidence missing, unbound, or diagnostics-failed"
+        refused["aggregate_estimation"] = _refuse(
+            "LOCO evidence missing, unbound, or diagnostics-failed",
+            UNEVALUABLE, "produce clean, bound LOCO evidence")
     elif not contamination_clean:
-        refused["aggregate_estimation"] = contamination_msg
+        refused["aggregate_estimation"] = vitiation
     elif coverage is None or rmse is None or sd_obs is None:
-        refused["aggregate_estimation"] = ("LOCO carries no coverage/RMSE/spread "
-                                           "for the sharpness-aware gate")
-    elif 0.75 <= coverage <= 0.98 and rmse <= 0.75 * sd_obs:
-        licensed["aggregate_estimation"] = (
-            f"coverage {coverage:.2f} in [0.75, 0.98] and RMSE {rmse:.2f} <= "
-            f"0.75 x sd(observed item means) = {0.75 * sd_obs:.2f}; note "
-            "within-family interpretation only (family location needs anchors)")
+        refused["aggregate_estimation"] = _refuse(
+            "LOCO carries no coverage/RMSE/spread for the sharpness-aware gate",
+            UNEVALUABLE, "re-run LOCO with the current report schema")
+    elif lo_band <= coverage <= hi_band and rmse <= g["rmse_max_frac_of_observed_sd"] * sd_obs:
+        _grant("aggregate_estimation", None,
+               f"coverage {coverage:.2f} in [{lo_band}, {hi_band}] and RMSE "
+               f"{rmse:.2f} <= {g['rmse_max_frac_of_observed_sd']} x "
+               f"sd(observed item means) = "
+               f"{g['rmse_max_frac_of_observed_sd'] * sd_obs:.2f}; "
+               "within-family interpretation only")
     else:
-        refused["aggregate_estimation"] = (
-            f"coverage {coverage:.2f} (need [0.75, 0.98]) with RMSE {rmse:.2f} "
-            f"vs sharpness bound {0.75 * sd_obs:.2f}: wide-interval coverage "
-            "without accuracy does not license aggregate use")
+        refused["aggregate_estimation"] = _refuse(
+            f"coverage {coverage:.2f} (need [{lo_band}, {hi_band}]) with RMSE "
+            f"{rmse:.2f} vs sharpness bound "
+            f"{g['rmse_max_frac_of_observed_sd'] * sd_obs:.2f}: wide-interval "
+            "coverage without accuracy does not license aggregate use",
+            SHORTFALL, "sharper instrument or more criterion data")
 
-    refused["effect_reproduction"] = ("not yet tested: requires matched "
-                                      "experimental contrasts")
-    refused["distributional_claims"] = (
+    refused["effect_reproduction"] = _refuse(
+        "not yet tested: requires matched experimental contrasts",
+        UNEVALUABLE, "add a matched-contrast validation stage (v2)")
+    refused["distributional_claims"] = _refuse(
         "no participant-level validation of variance structure"
         + ("" if ppc is None or ppc.get("passed")
-           else "; posterior predictive checks failed"))
-    refused["population_transfer"] = (
-        "refused: the v1 ladder contains no population-transfer test; the "
-        "estimand population defaults to the criterion sample's own")
-    refused["individual_simulation"] = ("refused permanently: an item-level "
-                                        "instrument licenses no individual-level "
-                                        "human simulation")
-    refused["mechanism_claims"] = ("refused permanently: the model estimates a "
-                                   "linking function, not a mechanism")
+           else "; posterior predictive checks failed"),
+        UNEVALUABLE if ppc is None or ppc.get("passed") else AFFIRMATIVE,
+        "model and validate rater heterogeneity (v2)")
+    refused["population_transfer"] = _refuse(
+        "the v1 ladder contains no population-transfer test; the estimand "
+        "population defaults to the criterion sample's own",
+        UNEVALUABLE, "add stratified human anchors from the target population (v2)")
+    refused["individual_simulation"] = _refuse(
+        "an item-level instrument licenses no individual-level human simulation",
+        STRUCTURAL, "none: outside this design's claim space")
+    refused["mechanism_claims"] = _refuse(
+        "the model estimates a linking function, not a mechanism",
+        STRUCTURAL, "none: outside this design's claim space")
 
     # ---- descriptive findings: always emitted, never a license
     descriptive = {
@@ -424,6 +524,35 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             f: v.get("spearman") for f, v in ((loco or {}).get("per_family") or {}).items()
         } or "no LOCO evidence",
         "human_split_half": split_half,
+        "response_style": (response_style if response_style is not None
+                           else "not assessed (no response_style.json)"),
+    }
+
+    # ---- the licence life-cycle block (ai-evaluation-kinds)
+    licence = {
+        "status": "issued" if licensed else "descriptive_only",
+        "issued_by": issued_by,
+        "issued": datetime.date.today().isoformat(),
+        "threshold_spec": spec_identity(),
+        "expiry_conditions": [
+            "any instrument version change (checkpoint commit, digest, or "
+            "serving stack) relative to the recorded provenance",
+            "any change to the item pool, criterion data, or measurements "
+            "(hashes in run.json)",
+            "any change to the Stan model (stan_sha256)",
+        ],
+        "erosion_conditions": [
+            "selecting prompts, models, or items against this certificate's "
+            "gate statistics vitiates those statistics (Goodhart)",
+            "repeated selective re-running until a gate passes",
+        ],
+        "defeat_and_supersession": (
+            "a later certificate built for this run_dir supersedes this one; "
+            "a failed re-validation defeats all outstanding grants"),
+        "contestation": (
+            "re-run scripts/pilot.py and rebuild the warrant, or submit the "
+            "current validation packet (reviews/) to an independent reviewer; "
+            "disagreement with a gate is a spec revision, not an edit"),
     }
 
     cert = _plain({
@@ -432,6 +561,7 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         "run_id": (run or {}).get("run_id", "not recorded"),
         "posterior_sha256_recomputed": posterior_sha,
         "stan_sha256_recomputed": stan_sha,
+        "licence": licence,
         "estimand": estimand,
         "domain": domain,
         "instruments": instruments,
@@ -440,6 +570,9 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         "refused_claims": refused,
         "descriptive_findings": descriptive,
         "residual_risks": [
+            "binding integrity is not construct validity: a pristine, fully "
+            "bound record can still document the wrong predicate; hash checks "
+            "discharge staleness, not meaning",
             "shared pretraining bias: local instruments share web-scale "
             "training data and can share construction-specific error; a tight "
             "multiverse fan does not rule this out",

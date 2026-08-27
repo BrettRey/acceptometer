@@ -46,8 +46,19 @@ def test_warrant_certificate(run):
 
     all_tiers = {**loaded["licensed_claims"], **loaded["refused_claims"]}
     assert set(all_tiers) == set(TIERS)
-    for tier, reason in all_tiers.items():
-        assert isinstance(reason, str) and reason.strip(), tier
+    # refusals are typed with remedies; grants carry the four projective blocks
+    for tier, entry in loaded["refused_claims"].items():
+        assert entry["reason"].strip() and entry["remedy"].strip(), tier
+        assert entry["type"] in ("unevaluable", "shortfall",
+                                 "affirmative_failure", "vitiated",
+                                 "structural"), tier
+    for tier, entry in loaded["licensed_claims"].items():
+        assert entry["basis"].strip(), tier
+        assert "declaration" in entry and "projectibility_profile" in entry
+        assert entry["defeaters"], tier
+    # the licence life-cycle block is always present
+    assert loaded["licence"]["status"] in ("issued", "descriptive_only")
+    assert loaded["licence"]["threshold_spec"]["spec_version"]
 
     # no loco.json in this run dir, so ranking must not have been granted
     assert "ranking_within_family" in loaded["refused_claims"]
@@ -63,7 +74,7 @@ def test_warrant_certificate(run):
     # recovery.json/sbc.json (and its tiny fit may fail diagnostics), so
     # screening must be refused, whichever prerequisite fires first
     assert "screening" in loaded["refused_claims"]
-    reason = loaded["refused_claims"]["screening"]
+    reason = loaded["refused_claims"]["screening"]["reason"]
     assert any(w in reason for w in ("missing", "failed", "not passed",
                                      "not produced", "binding"))
 

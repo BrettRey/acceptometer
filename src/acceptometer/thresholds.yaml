@@ -1,0 +1,41 @@
+# Frozen decision-threshold specification for acceptometer warrants.
+#
+# This file is the single versioned source for every gate value. Certificates
+# cite spec_version and the file's SHA-256, so a threshold change is a visible
+# spec revision, never a silent code edit (practice adopted from the
+# delegation-assurance frozen-specification discipline).
+#
+# Status: pre-registered decision defaults. These are NOT estimand-specific
+# loss analyses; a deployment with a real loss function should derive its own
+# spec revision and say so.
+
+spec_version: 1.0.0
+frozen: 2026-08-27
+
+diagnostics:
+  divergence_rate_max: 0.005
+  rhat_max: 1.01
+  ess_bulk_min: 400
+
+sbc:
+  failure_frac_max: 0.10
+
+ppc:
+  global_ppp_min: 0.01
+  family_ppp_min: 0.005
+  instrument_ppp_min: 0.005
+
+nonresponse_flag_rate: 0.10
+
+screening:
+  p_pos_min: 0.95
+  rel_median_min: 0.5
+  rel_q10_min: 0.35
+
+ranking_within_family:
+  mean_spearman_min: 0.6
+  frac_families_gt_0p3_min: 0.8
+
+aggregate_estimation:
+  coverage_band: [0.75, 0.98]
+  rmse_max_frac_of_observed_sd: 0.75

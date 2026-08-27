@@ -147,12 +147,14 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
             "participant_entropy_ppp": _ppp(obs_pent, pent),
             "participant_range_ppp": _ppp(obs_prange, prange),
         }
-        mode_pass = (mode_report["within_item_sd_global_ppp"] >= 0.01
-                     and mode_report["family_spread_ppp_min"] >= 0.005
-                     and mode_report["within_item_sd_family_ppp_min"] >= 0.005
-                     and mode_report["category_usage_ppp"] >= 0.01
-                     and mode_report["participant_entropy_ppp"] >= 0.01
-                     and mode_report["participant_range_ppp"] >= 0.01)
+        from ..spec import load_spec
+        gp = load_spec()["ppc"]
+        mode_pass = (mode_report["within_item_sd_global_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["family_spread_ppp_min"] >= gp["family_ppp_min"]
+                     and mode_report["within_item_sd_family_ppp_min"] >= gp["family_ppp_min"]
+                     and mode_report["category_usage_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["participant_entropy_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["participant_range_ppp"] >= gp["global_ppp_min"])
         mode_report["passed"] = bool(mode_pass)
         report[mode] = mode_report
         all_pass = all_pass and mode_pass
@@ -205,7 +207,8 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
         report["instrument_ppc"] = {
             "cell_family_ppp": inst_ppps,
             "min_ppp": min(inst_ppps.values()) if inst_ppps else None,
-            "passed": bool(inst_ppps and min(inst_ppps.values()) >= 0.005),
+            "passed": bool(inst_ppps and min(inst_ppps.values())
+                           >= load_spec()["ppc"]["instrument_ppp_min"]),
         }
         all_pass = all_pass and report["instrument_ppc"]["passed"]
     report["passed"] = bool(all_pass)
