@@ -99,16 +99,23 @@ intervals wider than in-family ones by construction rather than by hope.
 fit- and item-set-specific, with noise = omega_m^2 + sigma_m^2 for replicated
 cells):
 
-- `reliability[m]` — the **global-slope signal ratio**, using beta_m alone.
-  NOT a warrant quantity: a family slope deviation changes how much
-  theta-signal that family's scores carry, so a cell can look reliable
-  globally while carrying no signal in a particular family.
-- `reliability_family[m, c]` — per-family, using the realized slope
-  `beta_m + b_dev_mc`.
-- `reliability_new[m]` — **new-family predictive**: each posterior draw
-  samples a fresh slope deviation, so this posterior is the predictive
-  distribution for a family the instrument has never seen. This is the
-  screening-gate quantity, because screening claims project.
+- `reliability[m]` — the **global-slope signal ratio**, using beta_m alone
+  and the pooled theta variance. Descriptive only, never a warrant quantity.
+- `reliability_family[m, c]` — per-family, WITHIN-family signal variance
+  (tau_item^2), sign-aware: a reversed realized slope scores zero rather than
+  being laundered into signal by squaring.
+- `p_pos_new[m]` and `reliability_new_directional[m]` — the new-family
+  predictive pair: each posterior draw samples a fresh slope deviation;
+  p_pos_new is the predictive probability the new family's slope has the
+  validated orientation, and the directional reliability zeroes reversed
+  draws. Both are model-based extrapolations CONDITIONAL on exchangeability
+  of construction families, which are purposive — the certificate labels them
+  as such wherever they appear. Screening gates on the pair
+  (P(positive) >= 0.95, median > 0.5, q10 > 0.35).
+- **Structural limit**: absolute location of a family with no human anchor is
+  prior-identified, not likelihood-identified (delta-invariance against
+  per-cell family intercepts), so unanchored family-location claims are
+  refused permanently; within-family contrasts are the identified claims.
 
 MORCELA is the special case of one continuous method, no family structure,
 fixed covariates; here the linking is Bayesian, multilevel, and jointly
@@ -136,11 +143,19 @@ ordered cutpoints with normal(0,2) prior. No flat priors anywhere.
    calibration; full SBC documented as future work.
 3. **Real fit.** Human criterion data + real elicitation runs.
 4. **Posterior predictive checks at the real-fit stage, with consequences.**
-   Simulate human samples from the fitted model; compare per-family item-mean
-   spread, category usage, and disagreement structure to the real data. A PPC
-   failure on disagreement structure refuses the distributional tier (already
-   refused in v1) and flags the aggregate tier in the certificate; it is a
-   recorded gate, not a decoration.
+   Human arm: two participant modes (conditional on fitted raters, marginal
+   with fresh raters), per-family discrepancy vectors gated on minima,
+   category usage with a proper replicate reference, and participant
+   response-style checks (entropy, range). Instrument arm: a GATED
+   posterior-predictive check per (cell, family) on the fitted standardized
+   scale with every model term including the item effect — the measurement
+   model that produces every instrument-based claim must fit before any is
+   granted.
+4b. **Simulated new-family recovery** (`newfam_check`): simulate under known
+   truth, withhold whole families' human data, mark them new, and verify the
+   branch the warrant actually uses: within-family theta coverage, positive
+   within-family rank recovery, and reported (unGated) family-location bias —
+   the empirical face of the prior-identification limit.
 5. **Generalization tests** (these feed the warrant):
    - **LOCO-CV:** leave-one-construction-family-out. Refit without family c's
      human data; predict its human item means from LLM scores alone; record

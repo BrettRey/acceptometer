@@ -26,6 +26,7 @@ def build_stan_data(
     K: int = 7,
     standardize_scores: bool = True,
     new_families: set | None = None,
+    X_stats: tuple | None = None,
 ) -> tuple[dict, dict]:
     """Returns (stan_data, index_maps). index_maps records the id->index
     mappings and per-cell standardization constants so posteriors can be
@@ -36,8 +37,12 @@ def build_stan_data(
     constr_ix = {c: i + 1 for i, c in enumerate(constrs)}
 
     X = np.asarray(X, dtype=float)
-    X_mean, X_sd = X.mean(axis=0), X.std(axis=0)
-    X_sd[X_sd == 0] = 1.0
+    if X_stats is not None:
+        X_mean, X_sd = (np.asarray(X_stats[0], dtype=float),
+                        np.asarray(X_stats[1], dtype=float))
+    else:
+        X_mean, X_sd = X.mean(axis=0), X.std(axis=0)
+    X_sd = np.where(X_sd == 0, 1.0, X_sd)
     Xs = (X - X_mean) / X_sd
 
     new_families = new_families or set()
@@ -168,8 +173,11 @@ def diagnostics_gate(fit, idata) -> dict:
     div = int(np.sum(fit.method_variables()["divergent__"]))
     n_draws = int(np.prod(fit.method_variables()["divergent__"].shape))
     core = [v for v in ["beta", "sigma_s", "tau_constr", "tau_item", "tau_a",
-                        "tau_b", "omega", "kappa", "sigma_u", "b_b"]
+                        "tau_b", "omega", "kappa", "sigma_u", "b_b",
+                        "a_dev", "b_dev", "theta"]
             if v in idata.posterior]
+    if "mu_new_raw" in idata.posterior and idata.posterior["mu_new_raw"].shape[-1] > 0:
+        core.append("mu_new_raw")
     summ = az.summary(idata, var_names=core)
     rhat_max = float(summ["r_hat"].max())
     ess_min = float(summ["ess_bulk"].min())
@@ -219,3 +227,43 @@ def save_fit(idata, maps: dict, report: dict, out_dir: str | Path,
         "input_hashes": input_hashes or {},
     }
     (out / "run.json").write_text(json.dumps(run, indent=2))
+
+
+def mode_audit(data: dict, seed: int = 3, iter_warmup: int = 750,
+               iter_sampling: int = 750) -> dict:
+    """Deliberately overdispersed-start check for the known reflection basin.
+
+    Data-informed inits place all production chains in one basin; agreement
+    among them cannot show the other basin has negligible mass. This audit
+    runs extra chains from random inits and compares the best log posterior
+    density found in each orientation (sign of the first instrument slope).
+    A reflected basin within ~10 lp of the main one is a hard warning: the
+    posterior is genuinely bimodal and single-basin results are truncated."""
+    import arviz as az
+    from cmdstanpy import CmdStanModel
+
+    model = CmdStanModel(stan_file=str(STAN_FILE))
+    fit = model.sample(data=data, chains=4, parallel_chains=4,
+                       iter_warmup=iter_warmup, iter_sampling=iter_sampling,
+                       adapt_delta=0.95, seed=seed, show_progress=False)
+    idata = az.from_cmdstanpy(fit)
+    lp = fit.method_variables()["lp__"]                    # (draws, chains)
+    beta0 = idata.posterior["beta"].values[..., 0]          # (chains, draws)
+    lp_by_chain = lp.T                                      # (chains, draws)
+    pos_mask = beta0.mean(axis=1) > 0
+    out = {
+        "chains_positive_orientation": int(pos_mask.sum()),
+        "chains_negative_orientation": int((~pos_mask).sum()),
+        "max_lp_positive": (round(float(lp_by_chain[pos_mask].max()), 1)
+                            if pos_mask.any() else None),
+        "max_lp_negative": (round(float(lp_by_chain[~pos_mask].max()), 1)
+                            if (~pos_mask).any() else None),
+    }
+    if out["max_lp_positive"] is not None and out["max_lp_negative"] is not None:
+        gap = out["max_lp_positive"] - out["max_lp_negative"]
+        out["lp_gap_positive_minus_negative"] = round(float(gap), 1)
+        out["bimodality_warning"] = bool(abs(gap) < 10)
+    else:
+        out["lp_gap_positive_minus_negative"] = None
+        out["bimodality_warning"] = False
+    return out

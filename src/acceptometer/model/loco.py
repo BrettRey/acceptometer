@@ -121,9 +121,14 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
 
         cont_std, _ = (_standardize_training_only(cont, train_items)
                        if cont is not None and len(cont) else (None, {}))
+        # nuisance covariates: training-family constants only, applied
+        # unchanged to the held family (inductive, not transductive)
+        tr_rows = [j for j, it in enumerate(items) if it.item_id in train_items]
+        Xtr = np.asarray(X, dtype=float)[tr_rows]
+        X_stats = (Xtr.mean(axis=0), Xtr.std(axis=0))
         data, maps = build_stan_data(items, X, train_human, cont_std, binary,
                                      K=K, standardize_scores=False,
-                                     new_families={fam})
+                                     new_families={fam}, X_stats=X_stats)
         fit, idata = fit_model(data, seed=seed,
                                iter_warmup=iter_warmup, iter_sampling=iter_sampling)
         diag = diagnostics_gate(fit, idata)
@@ -151,6 +156,17 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
     pooled_fam = np.array(pooled_fam)
 
     pooled_rho = _spearman(pooled_pred, pooled_obs)
+    # the pooled statistic conflates between-family separation with
+    # within-family ordering (well-separated family means can carry a high
+    # pooled rho over random within-family ranks), so the claim-relevant
+    # quantities are reported separately:
+    fam_pred = pd.Series(pooled_pred).groupby(pd.Series(pooled_fam)).mean()
+    fam_obs = pd.Series(pooled_obs).groupby(pd.Series(pooled_fam)).mean()
+    between_rho = _spearman(fam_pred.to_numpy(), fam_obs.to_numpy())
+    within = [v["spearman"] for v in per_family.values()
+              if v["spearman"] is not None]
+    frac_within_gt_03 = (float(np.mean([w > 0.3 for w in within]))
+                         if within else None)
     # family-cluster bootstrap: rank transfer uncertainty at the level the
     # sampling actually happened (families are the purposive units)
     rng = np.random.default_rng(seed)
@@ -169,9 +185,15 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
         "per_family": per_family,
         "n_families": len(per_family),
         "families_tested": sorted(per_family.keys()),
-        "pooled_spearman": round(pooled_rho, 3) if pooled_rho == pooled_rho else None,
+        "pooled_spearman_descriptive": (round(pooled_rho, 3)
+                                        if pooled_rho == pooled_rho else None),
         "pooled_spearman_cluster_boot_lower90": (round(lower90, 3)
                                                  if lower90 is not None else None),
+        "between_family_spearman": (round(between_rho, 3)
+                                    if between_rho == between_rho else None),
+        "within_family_spearman_min": (round(min(within), 3) if within else None),
+        "frac_families_within_spearman_gt_0.3": frac_within_gt_03,
+        "sd_observed_item_means": round(float(np.std(pooled_obs)), 3),
         "mean_spearman": round(float(np.mean(
             [v["spearman"] for v in fams_ok if v["spearman"] is not None])), 3) if fams_ok else None,
         "mean_rmse": round(float(np.mean([v["rmse"] for v in fams_ok])), 3) if fams_ok else None,

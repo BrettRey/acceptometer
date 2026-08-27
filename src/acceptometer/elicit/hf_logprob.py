@@ -94,7 +94,12 @@ class HFLogprobScorer:
         return out
 
     def _sentence_scores(self, items: list[Item]) -> list[dict[str, float | int | bool]]:
+        # prefer BOS; fall back to EOS as the conditioning token (standard
+        # practice) so every sentence token is scored and the word-level
+        # unigram correction stays aligned with the token-level model sum
         bos_id = self.tokenizer.bos_token_id
+        if bos_id is None:
+            bos_id = self.tokenizer.eos_token_id
         encoded = [
             self.tokenizer.encode(item.text, add_special_tokens=False) for item in items
         ]

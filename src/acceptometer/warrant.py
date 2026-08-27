@@ -1,49 +1,50 @@
 """Validity-certificate builder (warrant.yaml).
 
 The certificate answers the projectibility question the posterior cannot:
-which claim tiers does the evidence on disk license? Every number in the
-certificate comes from a file actually read out of the run directory; missing
-or failed evidence refuses the dependent tiers, it never grants them; and
-evidence is refused unless it is BOUND to the posterior it claims to certify
-(via run.json hashes), so a stale or copied report cannot license a different
-fit.
+which claims does the evidence on disk license? Principles, enforced in code:
 
-The validation ladder is enforced literally:
-  screening            needs diagnostics + fake-data recovery + SBC, all
-                       passed, plus an unflagged cell whose NEW-FAMILY
-                       predictive reliability clears the gate (the global
-                       slope ratio is not a warrant quantity: a family slope
-                       deviation changes how much signal that family's scores
-                       carry).
-  ranking              additionally needs LOCO: present, bound, every family
-                       tested, all fold diagnostics passed, pooled tie-aware
-                       Spearman > 0.6 with family-cluster bootstrap lower-90
-                       > 0.5, and contamination assessed clean (LOCO rewards
-                       contamination, so a suspect item source caps ranking
-                       too).
-  aggregate_estimation additionally needs the PPC (present, bound, both
-                       participant modes passed) and LOCO coverage in band.
-  everything above     refused in v1 with reasons; individual simulation and
-                       mechanism claims permanently.
+- Every number comes from a file actually read; missing or failed evidence
+  refuses dependent claims, never grants them.
+- Evidence binds to the posterior it certifies by RECOMPUTED hashes: the
+  warrant rehashes posterior.nc, the Stan source, index_maps.json, and the
+  grid manifest, and requires exact input-hash-map equality for LOCO. A
+  swapped posterior, edited manifest, or stale report invalidates.
+- Contamination caps EVERY deployment tier, screening included: exposure to
+  published items can inflate the fitted slope and the stable instrument
+  opinion exactly where the screening statistic looks, so a suspect source
+  supports descriptive findings only.
+- Claims are a matrix, not a ladder: within-family ranking, family location,
+  and aggregate estimation carry independent evidence requirements (aggregate
+  no longer presupposes ranking).
+- New-family quantities are model-based extrapolations conditional on
+  exchangeability of construction families, which are purposive; the
+  certificate says so wherever they appear, and uses the sign-aware
+  directional reliability (a reversed-slope draw counts as zero signal, not
+  as squared signal).
+- Absolute location of a family with no human anchor is prior-identified
+  (delta-invariance against per-cell family intercepts), so unanchored
+  family-location claims are refused structurally.
 
 Thresholds are pre-registered decision defaults, not estimand-specific loss
-analyses; the certificate says so.
+analyses; the certificate says that too.
 """
 
 from __future__ import annotations
 
 import datetime
 import json
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from .model.fit import STAN_FILE, sha256_file
+
 TIERS = (
     "screening",
-    "ranking",
+    "ranking_within_family",
+    "family_location_unanchored",
     "aggregate_estimation",
     "effect_reproduction",
     "distributional_claims",
@@ -92,33 +93,6 @@ def _plain(x):
     return x
 
 
-def _bound(child: dict | None, run: dict | None, how: str) -> tuple[bool, str]:
-    """Check an evidence file's binding to the run manifest."""
-    if child is None:
-        return False, "evidence not produced"
-    if run is None:
-        return False, "run.json missing; evidence cannot be bound to a posterior"
-    if how == "posterior":
-        want = run.get("posterior_sha256")
-        got = child.get("posterior_sha256")
-        if got is None:
-            return False, "evidence carries no posterior_sha256 stamp"
-        if got != want:
-            return False, "evidence is stamped for a different posterior"
-    elif how == "inputs":
-        want = run.get("input_hashes") or {}
-        got = child.get("input_hashes") or {}
-        if not got:
-            return False, "evidence carries no input_hashes stamp"
-        shared = set(want) & set(got)
-        if not shared:
-            return False, "evidence and run share no input hashes"
-        for k in shared:
-            if want[k] != got[k]:
-                return False, f"input hash mismatch on {k}"
-    return True, "bound"
-
-
 def build_warrant(run_dir: str | Path, estimand: dict,
                   out_path: str | Path | None = None) -> dict:
     import arviz as az
@@ -137,54 +111,115 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     diagnostics = _read_json(run_dir / "diagnostics.json")
     recovery = _read_json(run_dir / "recovery.json")
     sbc = _read_json(run_dir / "sbc.json")
+    newfam = _read_json(run_dir / "newfam.json")
     loco = _read_json(run_dir / "loco.json")
     ppc = _read_json(run_dir / "ppc.json")
     manifest_path = run_dir / "grid_manifest.yaml"
     manifest = yaml.safe_load(manifest_path.read_text()) if manifest_path.exists() else None
+    provenance = _read_json(run_dir / "instruments.json")
 
-    # ---- instruments: new-family predictive reliability is the gate quantity
+    # ---- recomputed binding: trust nothing declared, rehash what exists
+    binding: dict[str, str] = {}
+    posterior_sha = sha256_file(post_path)
+    stan_sha = sha256_file(STAN_FILE)
+    if run is None:
+        binding["run"] = "run.json missing: nothing can be bound"
+        bound_core = False
+    else:
+        checks = {
+            "posterior": run.get("posterior_sha256") == posterior_sha,
+            "stan": run.get("stan_sha256") == stan_sha,
+        }
+        binding["run"] = ("bound" if all(checks.values()) else
+                          "MISMATCH: " + ", ".join(k for k, v in checks.items() if not v))
+        bound_core = all(checks.values())
+
+    def _bound_posterior(child: dict | None, name: str) -> bool:
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        got = child.get("posterior_sha256")
+        if got is None:
+            binding[name] = "no posterior stamp"
+            return False
+        ok = got == posterior_sha
+        binding[name] = "bound" if ok else "stamped for a different posterior"
+        return ok
+
+    def _bound_inputs(child: dict | None, name: str) -> bool:
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        if run is None:
+            binding[name] = "run.json missing"
+            return False
+        want = run.get("input_hashes") or {}
+        got = child.get("input_hashes") or {}
+        ok = bool(want) and got == want          # exact map equality
+        binding[name] = ("bound" if ok else
+                         "input-hash map differs from run.json (exact equality required)")
+        return ok
+
+    def _bound_stan(child: dict | None, name: str) -> bool:
+        """Simulation-based evidence (recovery, SBC, newfam) certifies the
+        MODEL, not a posterior: it binds through the Stan source hash."""
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        ok = child.get("stan_sha256") == stan_sha
+        binding[name] = ("bound" if ok else
+                         "generated for a different model (stan hash differs)")
+        return ok
+
+    ppc_bound = _bound_posterior(ppc, "ppc")
+    loco_bound = _bound_inputs(loco, "loco")
+    rec_bound = _bound_stan(recovery, "recovery")
+    sbc_bound = _bound_stan(sbc, "sbc")
+    newfam_bound = _bound_stan(newfam, "newfam")
+
+    # ---- instruments: sign-aware new-family quantities gate; provenance merged
     cont_cells = list(maps.get("cont_cells", []))
     instruments = []
-    rel_new_stats: dict[str, dict] = {}
-    if cont_cells and "reliability_new" in idata.posterior:
-        rel_new = np.asarray(idata.posterior["reliability_new"].values)
-        rel_new = rel_new.reshape(-1, rel_new.shape[-1])
-        rel_glob = np.asarray(idata.posterior["reliability"].values)
-        rel_glob = rel_glob.reshape(-1, rel_glob.shape[-1])
+    gate_stats: dict[str, dict] = {}
+    if cont_cells and "reliability_new_directional" in idata.posterior:
+        rel_dir = np.asarray(idata.posterior["reliability_new_directional"].values)
+        rel_dir = rel_dir.reshape(-1, rel_dir.shape[-1])
+        p_pos = np.asarray(idata.posterior["p_pos_new"].values)
+        p_pos = p_pos.reshape(-1, p_pos.shape[-1])
         rel_fam = np.asarray(idata.posterior["reliability_family"].values)
         rel_fam = rel_fam.reshape(-1, rel_fam.shape[-2], rel_fam.shape[-1])
         alpha = np.asarray(idata.posterior["alpha"].values)
         alpha = alpha.reshape(-1, alpha.shape[-1])
         for j, name in enumerate(cont_cells):
-            med = float(np.median(rel_new[:, j]))
-            q10, q90 = np.percentile(rel_new[:, j], [10, 90])
+            med = float(np.median(rel_dir[:, j]))
+            q10, q90 = np.percentile(rel_dir[:, j], [10, 90])
+            ppos = float(p_pos[:, j].mean())
             fam_meds = np.median(rel_fam[:, j, :], axis=0)
-            rel_new_stats[name] = {"median": med, "q10": float(q10)}
+            gate_stats[name] = {"median": med, "q10": float(q10), "p_pos": ppos}
             entry = {
                 "cell": name,
-                "reliability_new_family_median": round(med, 3),
-                "reliability_new_family_80": [round(float(q10), 3), round(float(q90), 3)],
-                "reliability_by_family": {
+                "p_positive_slope_new_family": round(ppos, 3),
+                "reliability_new_directional_median": round(med, 3),
+                "reliability_new_directional_80": [round(float(q10), 3),
+                                                   round(float(q90), 3)],
+                "reliability_by_family_within": {
                     f: round(float(v), 3)
                     for f, v in zip(maps.get("constructions", []), fam_meds)
                 },
-                "global_slope_signal_ratio_median": round(
-                    float(np.median(rel_glob[:, j])), 3),
                 "alpha_standardized_median": round(float(np.median(alpha[:, j])), 3),
-                "standardization": maps.get("cell_standardization", {}).get(name,
-                                                                            "none recorded"),
+                "standardization": maps.get("cell_standardization", {}).get(
+                    name, "none recorded"),
+                "interpretation": ("model-based extrapolation conditional on "
+                                   "exchangeability of construction families "
+                                   "(purposive sample); within-family signal "
+                                   "variance; reversed-slope draws count as "
+                                   "zero signal"),
             }
+            if provenance and name in provenance:
+                entry["provenance"] = provenance[name]
+            else:
+                entry["provenance"] = "not recorded in run dir"
             instruments.append(entry)
-
-    # prompt invariance from paraphrase-labeled cell names, if any
-    groups: dict[str, list[str]] = defaultdict(list)
-    for name in cont_cells:
-        parts = name.split("/")
-        if len(parts) >= 3:
-            groups["/".join(parts[:2])].append(name)
-    invariance = ("assessed descriptively at the grid level; paraphrases enter "
-                  "the fit as one instrument, so no model-based invariance "
-                  "statistic exists in this fit" if not groups else groups)
 
     estimand = dict(estimand)
     split_half = estimand.pop("human_split_half", "not provided")
@@ -216,20 +251,18 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         c for c, r in (nonresponse or {}).items()
         if isinstance(r, (int, float)) and r > 0.10)
 
-    loco_ok, loco_bind_reason = _bound(loco, run, "inputs")
-    ppc_ok_bind, ppc_bind_reason = _bound(ppc, run, "posterior")
+    inst_ppc = (ppc or {}).get("instrument_ppc") if ppc else None
 
     evidence = {
         "run": run if run is not None else "not produced",
+        "binding": binding,
         "diagnostics": diagnostics if diagnostics is not None else "not produced",
         "fake_data_recovery": recovery if recovery is not None else "not produced",
         "sbc": sbc if sbc is not None else "not produced",
+        "new_family_recovery": newfam if newfam is not None else "not produced",
         "loco_transfer": loco if loco is not None else "not produced",
-        "loco_binding": loco_bind_reason,
         "ppc": ppc if ppc is not None else "not produced",
-        "ppc_binding": ppc_bind_reason,
         "multiverse_spread": _multiverse_spread(run_dir),
-        "prompt_invariance": invariance,
         "human_split_half": split_half,
         "contamination": contamination,
         "instrument_nonresponse": (
@@ -250,99 +283,128 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     licensed: dict[str, str] = {}
     refused: dict[str, str] = {}
 
-    # ---- screening: full ladder prerequisite + unflagged predictive reliability
+    # ---- shared prerequisites for ANY instrument-based deployment claim
     diag_ok = bool(diagnostics and diagnostics.get("passed") is True)
-    rec_ok = bool(recovery and recovery.get("passed") is True)
-    sbc_ok = bool(sbc and sbc.get("passed") is True)
-    candidates = {c: v for c, v in rel_new_stats.items() if c not in flagged_cells}
-    best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
-
-    if diagnostics is None:
-        refused["screening"] = "evidence not produced: diagnostics.json missing"
+    prereq_fail = None
+    if not bound_core:
+        prereq_fail = f"run binding failed ({binding['run']})"
     elif not diag_ok:
-        refused["screening"] = (
-            f"diagnostics gate failed (rhat_max={diagnostics.get('rhat_max')}, "
-            f"divergence_rate={diagnostics.get('divergence_rate')}, "
-            f"ess_bulk_min={diagnostics.get('ess_bulk_min')})")
-    elif recovery is None:
-        refused["screening"] = "evidence not produced: recovery.json missing (ladder step 1)"
-    elif not rec_ok:
-        refused["screening"] = "fake-data recovery failed (ladder step 1)"
-    elif sbc is None:
-        refused["screening"] = "evidence not produced: sbc.json missing (ladder step 2)"
-    elif not sbc_ok:
-        refused["screening"] = "SBC failed (ladder step 2)"
+        prereq_fail = "diagnostics gate not passed"
+    elif not (rec_bound and recovery.get("passed") is True):
+        prereq_fail = f"fake-data recovery: {binding['recovery']}" \
+            if not rec_bound else "fake-data recovery failed"
+    elif not (sbc_bound and sbc.get("passed") is True):
+        prereq_fail = f"SBC: {binding['sbc']}" if not sbc_bound else "SBC failed"
+    elif not (newfam_bound and newfam.get("passed") is True):
+        prereq_fail = (f"new-family simulated recovery: {binding['newfam']}"
+                       if not newfam_bound
+                       else "new-family simulated recovery failed")
+    elif not (ppc_bound and ppc.get("passed") is True):
+        prereq_fail = (f"PPC: {binding['ppc']}" if not ppc_bound
+                       else "PPC failed (human or instrument arm)")
+    elif inst_ppc is None or not inst_ppc.get("passed"):
+        prereq_fail = "instrument-arm posterior predictive check absent or failed"
+
+    contamination_msg = (
+        "contamination cap: item source not assessed clean; exposure to "
+        "published items can inflate the fitted slope and stable instrument "
+        "opinion exactly where this claim's statistic looks. A post-cutoff, "
+        "unpublished validation set is required")
+
+    # ---- screening
+    candidates = {c: v for c, v in gate_stats.items() if c not in flagged_cells}
+    best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
+    if prereq_fail:
+        refused["screening"] = prereq_fail
+    elif not contamination_clean:
+        refused["screening"] = contamination_msg
     elif best is None:
-        refused["screening"] = ("no unflagged continuous cell carries a "
-                                "new-family predictive reliability")
-    elif best[1]["median"] > 0.5 and best[1]["q10"] > 0.35:
+        refused["screening"] = ("no unflagged continuous cell carries the "
+                                "directional new-family quantities")
+    elif (best[1]["p_pos"] >= 0.95 and best[1]["median"] > 0.5
+          and best[1]["q10"] > 0.35):
         licensed["screening"] = (
-            f"full ladder passed and cell {best[0]} new-family predictive "
-            f"reliability median {best[1]['median']:.2f} > 0.5 with "
-            f"q10 {best[1]['q10']:.2f} > 0.35")
+            f"prerequisites passed; cell {best[0]}: P(new-family slope "
+            f"positive) {best[1]['p_pos']:.2f} >= 0.95, directional "
+            f"reliability median {best[1]['median']:.2f} > 0.5, q10 "
+            f"{best[1]['q10']:.2f} > 0.35 (model-based extrapolation "
+            f"conditional on family exchangeability)")
     else:
         refused["screening"] = (
-            f"best unflagged cell {best[0]}: new-family predictive reliability "
-            f"median {best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} "
-            f"(need median > 0.5 and q10 > 0.35)")
+            f"best unflagged cell {best[0]}: P(positive slope) "
+            f"{best[1]['p_pos']:.2f}, directional reliability median "
+            f"{best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} "
+            f"(need >= 0.95, > 0.5, > 0.35)")
 
-    # ---- ranking
+    # ---- within-family ranking
     all_fams = set(maps.get("constructions", []))
-    if "screening" not in licensed:
-        refused["ranking"] = "refused because screening is not granted"
+    within_ok = (loco is not None
+                 and (loco.get("mean_spearman") or -1) > 0.6
+                 and (loco.get("frac_families_within_spearman_gt_0.3") or 0) >= 0.8)
+    if prereq_fail:
+        refused["ranking_within_family"] = prereq_fail
     elif loco is None:
-        refused["ranking"] = "evidence not produced: loco.json missing"
-    elif not loco_ok:
-        refused["ranking"] = f"LOCO evidence not bound to this run: {loco_bind_reason}"
+        refused["ranking_within_family"] = "evidence not produced: loco.json missing"
+    elif not loco_bound:
+        refused["ranking_within_family"] = f"LOCO not bound: {binding['loco']}"
     elif not loco.get("all_diagnostics_passed"):
-        refused["ranking"] = "one or more LOCO fold fits failed diagnostics"
+        refused["ranking_within_family"] = "one or more LOCO fold fits failed diagnostics"
     elif set(loco.get("families_tested", [])) != all_fams:
         missing = sorted(all_fams - set(loco.get("families_tested", [])))
-        refused["ranking"] = f"LOCO did not cover every family (missing: {missing})"
+        refused["ranking_within_family"] = f"LOCO did not cover every family (missing: {missing})"
     elif not contamination_clean:
-        refused["ranking"] = (
-            "contamination cap: item source not assessed clean; contamination "
-            "inflates the held-out rank statistic itself (LOCO rewards it)")
-    elif (loco.get("pooled_spearman") or -1) > 0.6 and \
-         (loco.get("pooled_spearman_cluster_boot_lower90") or -1) > 0.5:
-        licensed["ranking"] = (
-            f"pooled tie-aware held-out Spearman "
-            f"{loco['pooled_spearman']:.2f} > 0.6 with family-cluster "
-            f"bootstrap lower-90 {loco['pooled_spearman_cluster_boot_lower90']:.2f} > 0.5")
+        refused["ranking_within_family"] = contamination_msg
+    elif within_ok:
+        licensed["ranking_within_family"] = (
+            f"mean within-family held-out Spearman "
+            f"{loco['mean_spearman']:.2f} > 0.6 and "
+            f"{loco['frac_families_within_spearman_gt_0.3']:.0%} of families "
+            f"> 0.3 (min {loco.get('within_family_spearman_min')})")
     else:
-        refused["ranking"] = (
-            f"pooled held-out Spearman {loco.get('pooled_spearman')} "
-            f"(lower-90 {loco.get('pooled_spearman_cluster_boot_lower90')}) "
-            "does not clear (0.6, 0.5)")
+        refused["ranking_within_family"] = (
+            f"within-family transfer insufficient: mean Spearman "
+            f"{loco.get('mean_spearman')}, "
+            f"{(loco.get('frac_families_within_spearman_gt_0.3') or 0):.0%} of "
+            f"families > 0.3, min {loco.get('within_family_spearman_min')}")
 
-    # ---- aggregate estimation
+    # ---- family location for unanchored families: structurally refused
+    refused["family_location_unanchored"] = (
+        "refused structurally: for a family with no human anchor items, "
+        "absolute location is prior-identified, not likelihood-identified "
+        "(shifting the family mean by delta and each cell's family intercept by "
+        "-slope*delta leaves the instrument likelihood unchanged); collect "
+        "anchor items or accept within-family claims only")
+
+    # ---- aggregate estimation (independent of ranking; needs sharpness too)
     coverage = loco.get("mean_coverage90") if loco else None
-    if "ranking" not in licensed:
-        refused["aggregate_estimation"] = "refused because ranking is not granted"
-    elif ppc is None:
-        refused["aggregate_estimation"] = "evidence not produced: ppc.json missing (ladder step 4)"
-    elif not ppc_ok_bind:
-        refused["aggregate_estimation"] = f"PPC evidence not bound to this run: {ppc_bind_reason}"
-    elif not ppc.get("passed"):
-        refused["aggregate_estimation"] = (
-            "posterior predictive check failed; the human arm misfits the "
-            "criterion data, so aggregate predictions inherit unquantified bias")
-    elif coverage is None:
-        refused["aggregate_estimation"] = "loco.json carries no 90% interval coverage"
-    elif 0.75 <= coverage <= 0.98:
+    rmse = loco.get("mean_rmse") if loco else None
+    sd_obs = loco.get("sd_observed_item_means") if loco else None
+    if prereq_fail:
+        refused["aggregate_estimation"] = prereq_fail
+    elif loco is None or not loco_bound or not loco.get("all_diagnostics_passed"):
+        refused["aggregate_estimation"] = "LOCO evidence missing, unbound, or diagnostics-failed"
+    elif not contamination_clean:
+        refused["aggregate_estimation"] = contamination_msg
+    elif coverage is None or rmse is None or sd_obs is None:
+        refused["aggregate_estimation"] = ("LOCO carries no coverage/RMSE/spread "
+                                           "for the sharpness-aware gate")
+    elif 0.75 <= coverage <= 0.98 and rmse <= 0.75 * sd_obs:
         licensed["aggregate_estimation"] = (
-            f"LOCO 90% interval coverage {coverage:.2f} within [0.75, 0.98], "
-            "PPC passed in both participant modes, contamination assessed clean")
+            f"coverage {coverage:.2f} in [0.75, 0.98] and RMSE {rmse:.2f} <= "
+            f"0.75 x sd(observed item means) = {0.75 * sd_obs:.2f}; note "
+            "within-family interpretation only (family location needs anchors)")
     else:
         refused["aggregate_estimation"] = (
-            f"LOCO 90% interval coverage {coverage:.2f} outside [0.75, 0.98]")
+            f"coverage {coverage:.2f} (need [0.75, 0.98]) with RMSE {rmse:.2f} "
+            f"vs sharpness bound {0.75 * sd_obs:.2f}: wide-interval coverage "
+            "without accuracy does not license aggregate use")
 
     refused["effect_reproduction"] = ("not yet tested: requires matched "
                                       "experimental contrasts")
     refused["distributional_claims"] = (
         "no participant-level validation of variance structure"
         + ("" if ppc is None or ppc.get("passed")
-           else "; posterior predictive check failed"))
+           else "; posterior predictive checks failed"))
     refused["population_transfer"] = (
         "refused: the v1 ladder contains no population-transfer test; the "
         "estimand population defaults to the criterion sample's own")
@@ -352,25 +414,41 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     refused["mechanism_claims"] = ("refused permanently: the model estimates a "
                                    "linking function, not a mechanism")
 
+    # ---- descriptive findings: always emitted, never a license
+    descriptive = {
+        "note": ("in-source descriptive associations on this item set; not "
+                 "deployment evidence"),
+        "pooled_heldout_spearman": (loco or {}).get("pooled_spearman_descriptive"),
+        "between_family_spearman": (loco or {}).get("between_family_spearman"),
+        "per_family_within_spearman": {
+            f: v.get("spearman") for f, v in ((loco or {}).get("per_family") or {}).items()
+        } or "no LOCO evidence",
+        "human_split_half": split_half,
+    }
+
     cert = _plain({
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "run_dir": str(run_dir),
         "run_id": (run or {}).get("run_id", "not recorded"),
-        "posterior_sha256": (run or {}).get("posterior_sha256", "not recorded"),
+        "posterior_sha256_recomputed": posterior_sha,
+        "stan_sha256_recomputed": stan_sha,
         "estimand": estimand,
         "domain": domain,
         "instruments": instruments,
         "evidence": evidence,
         "licensed_claims": licensed,
         "refused_claims": refused,
+        "descriptive_findings": descriptive,
         "residual_risks": [
             "shared pretraining bias: local instruments share web-scale "
             "training data and can share construction-specific error; a tight "
             "multiverse fan does not rule this out",
-            "reliability quantities are fit- and item-set-specific; they go "
-            "stale when the item pool changes",
+            "reliability quantities are fit- and item-set-specific and "
+            "conditional on a family-exchangeability extrapolation model",
             "thresholds are pre-registered defaults, not estimand-specific "
             "loss analyses",
+            "prompt-level dependence within pooled paraphrase cells is not "
+            "yet modeled (nested prompt effects are v2)",
         ],
     })
 

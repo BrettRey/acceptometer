@@ -115,6 +115,45 @@ zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
 rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
 population-transfer test, temporal drift evidence.
 
+2026-08-27 — Third external review (GPT-family, via Brett) triaged; verdict
+accepted: the screening grant is withdrawn and the pilot certificate licenses
+no deployment tier (descriptive findings only). Adopted: (1) reliability_new
+was sign-blind (squaring launders reversed slopes into signal) and used
+pooled between+within theta variance; replaced with P(new-family slope
+positive) plus a DIRECTIONAL within-family-variance reliability in which
+negative-slope draws count as zero; family-specific reliabilities likewise
+sign-aware and within-family; (2) contamination caps screening too, for the
+same reason it caps ranking; (3) hash binding made real: the warrant
+RECOMPUTES posterior/Stan hashes and requires exact input-hash-map equality;
+recovery/SBC/newfam bind via Stan-source hash; (4) simulated new-family
+recovery (newfam_check) added as a ladder stage: under known truth the new
+branch shows within-family coverage 0.83 and rank recovery +.84/+.85 while
+family-location bias (+0.19/-0.33) empirically displays the
+prior-identification limit; (5) instrument-arm PPC was broken (raw scores vs
+standardized predictions, omega omitted; z of 106-155 was the signature) —
+rebuilt as a posterior-predictive check on the fitted scale with all model
+terms, and GATED; (6) pooled LOCO Spearman demoted to descriptive (it
+conflates between-family separation with within-family ordering); claims
+split into within-family ranking, family location, aggregate; aggregate
+decoupled from ranking and given a sharpness gate (RMSE <= .75 x sd of
+observed means); (7) family location for unanchored families refused
+STRUCTURALLY (delta-invariance: shifting a new family's mean and each cell's
+family intercept in compensation leaves the instrument likelihood unchanged);
+(8) exchangeability labeling on every new-family quantity (families are
+purposive; the fresh-deviation draw is a working extrapolation model);
+(9) mode_audit added (overdispersed starts, lp comparison across
+orientations) since same-basin agreement cannot rule out the mirror;
+diagnostics core extended to a_dev/b_dev/mu_new_raw/theta; (10) SBC excludes
+failed-diagnostic replications from rank histograms, records their prior
+locations, cap tightened to 10%, tau_b and omega tracked; (11) SLOR no-BOS
+path eliminated via EOS-as-BOS fallback; (12) provenance (checkpoint commit,
+Ollama digest, dates) propagated into certificate instrument entries;
+posterior_summary.json added so report numbers are auditable; pilot script
+stops at first failed gate and deletes stale evidence. Adapted: prompt-level
+dependence noted as residual risk (nested prompt effects v2); participant
+response-style PPCs added (entropy, range) with item-by-participant residual
+checks deferred. Rejected: none of substance.
+
 2026-08-27 — Instrument-by-item error term (omega) added for replicated
 cells. Repeats average away draw noise but never the instrument's stable
 opinion about an item; without the term, replicated cells claim fictitious

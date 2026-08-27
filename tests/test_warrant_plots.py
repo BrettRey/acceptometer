@@ -50,20 +50,22 @@ def test_warrant_certificate(run):
         assert isinstance(reason, str) and reason.strip(), tier
 
     # no loco.json in this run dir, so ranking must not have been granted
-    assert "ranking" in loaded["refused_claims"]
+    assert "ranking_within_family" in loaded["refused_claims"]
     assert cert["licensed_claims"] == loaded["licensed_claims"]
 
     # every instrument row carries numbers read from the posterior
     for inst in loaded["instruments"]:
-        assert 0.0 <= inst["reliability_new_family_median"] <= 1.0
-        assert len(inst["reliability_new_family_80"]) == 2
-        assert "reliability_by_family" in inst
+        assert 0.0 <= inst["reliability_new_directional_median"] <= 1.0
+        assert len(inst["reliability_new_directional_80"]) == 2
+        assert 0.0 <= inst["p_positive_slope_new_family"] <= 1.0
+        assert "reliability_by_family_within" in inst
     # the ladder is enforced literally: the fixture run dir has no
     # recovery.json/sbc.json (and its tiny fit may fail diagnostics), so
     # screening must be refused, whichever prerequisite fires first
     assert "screening" in loaded["refused_claims"]
-    assert ("missing" in loaded["refused_claims"]["screening"]
-            or "failed" in loaded["refused_claims"]["screening"])
+    reason = loaded["refused_claims"]["screening"]
+    assert any(w in reason for w in ("missing", "failed", "not passed",
+                                     "not produced", "binding"))
 
 
 def _assert_png(path):

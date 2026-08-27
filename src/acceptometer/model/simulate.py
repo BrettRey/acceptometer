@@ -184,3 +184,68 @@ def recovery_check(idata, truth: SimTruth) -> dict:
 
 def write_report(report: dict, path: str | Path) -> None:
     Path(path).write_text(json.dumps(report, indent=2) + "\n")
+
+
+def newfam_check(n_new: int = 2, seed: int = 99, **fit_kw) -> dict:
+    """Simulated-LOCO validation of the new-family branch under known truth:
+    simulate, mark n_new families NEW (excluded from the sum-to-zero vector),
+    drop their human observations, fit, and check the quantities the warrant
+    would actually use for a new family. Gates: held-item theta 90% coverage
+    in [0.75, 0.98] AFTER family-mean centering (absolute family location is
+    prior-identified without an anchor -- the delta-invariance with a_dev --
+    so the calibrated claim is the within-family one); within-family rank
+    recovery positive in every held family; and the family-location bias is
+    REPORTED, not gated, as the empirical face of the prior-identification
+    limit."""
+    from .fit import fit_model, diagnostics_gate
+
+    data, truth = simulate(seed=seed)
+    n_constr = data["N_constr"]
+    new_fams = list(range(n_constr - n_new + 1, n_constr + 1))
+    constr = np.array(data["constr"])
+    held_items = {i + 1 for i in range(data["N_item"]) if constr[i] in new_fams}
+
+    keep = [j for j, it in enumerate(data["item_h"]) if it not in held_items]
+    data = dict(data)
+    data["item_h"] = [data["item_h"][j] for j in keep]
+    data["part_h"] = [data["part_h"][j] for j in keep]
+    data["y"] = [data["y"][j] for j in keep]
+    data["N_h"] = len(keep)
+    data["is_new"] = [1 if c in new_fams else 0 for c in range(1, n_constr + 1)]
+
+    fit, idata = fit_model(data, seed=seed, **fit_kw)
+    diag = diagnostics_gate(fit, idata)
+    post = idata.posterior
+    th = post["theta"].stack(d=("chain", "draw")).values
+
+    report = {"n_new_families": n_new, "diagnostics": diag, "per_family": {}}
+    cover_all, rank_ok = [], True
+    for c in new_fams:
+        idx = np.flatnonzero(constr == c)
+        t_true = truth.theta[idx]
+        t_draws = th[idx]                                   # (n_items, L)
+        # center within family, per draw, to test the identified claim
+        t_draws_c = t_draws - t_draws.mean(axis=0, keepdims=True)
+        t_true_c = t_true - t_true.mean()
+        lo, hi = np.percentile(t_draws_c, [5, 95], axis=1)
+        cov = float(np.mean((t_true_c >= lo) & (t_true_c <= hi)))
+        cover_all.append(cov)
+        pm = t_draws.mean(axis=1)
+        rho = float(np.corrcoef(
+            np.argsort(np.argsort(pm)), np.argsort(np.argsort(t_true)))[0, 1])
+        rank_ok = rank_ok and rho > 0
+        loc_bias = float(t_draws.mean() - t_true.mean())
+        report["per_family"][f"fam{c}"] = {
+            "theta_within_coverage90": round(cov, 3),
+            "within_rank_corr_truth": round(rho, 3),
+            "family_location_bias": round(loc_bias, 3),
+        }
+    mean_cov = float(np.mean(cover_all))
+    report["mean_within_coverage90"] = round(mean_cov, 3)
+    report["passed"] = bool(diag["passed"] and 0.75 <= mean_cov <= 0.98 and rank_ok)
+    from .fit import STAN_FILE, sha256_file
+    report["stan_sha256"] = sha256_file(STAN_FILE)
+    report["note"] = ("family_location_bias is reported unGated: absolute "
+                      "location of an unanchored family is prior-identified "
+                      "(delta-invariance with per-cell family intercepts)")
+    return report

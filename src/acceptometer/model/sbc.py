@@ -116,10 +116,13 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
     rng = np.random.default_rng(seed)
     tracked = ["tau_constr", "tau_item", "sigma_u"] + \
         [f"beta[{m}]" for m in range(1, M_c + 1)] + \
-        [f"sigma_s[{m}]" for m in range(1, M_c + 1)]
+        [f"sigma_s[{m}]" for m in range(1, M_c + 1)] + \
+        [f"tau_b[{m}]" for m in range(1, M_c + 1)] + \
+        [f"omega[{m}]" for m in range(1, M_c + 1)]
     ranks: dict[str, list[int]] = {t: [] for t in tracked}
     n_failed = 0
     n_diag_failed = 0
+    failed_truths: list[dict] = []
 
     for r in range(R):
         pr = _draw_prior(rng, n_constr, K, M_c, M_b, P)
@@ -144,7 +147,14 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
                            if v in idata.posterior])
         if not (div / ndr < 0.01 and float(summ["r_hat"].max()) < 1.02
                 and float(summ["ess_bulk"].min()) > 100):
+            # exclude this replication's ranks entirely: draws the check judged
+            # unreliable must not enter the uniformity evidence; record where
+            # in prior space the failures concentrate instead
             n_diag_failed += 1
+            failed_truths.append({"tau_constr": round(float(pr["tau_constr"]), 2),
+                                  "tau_item": round(float(pr["tau_item"]), 2),
+                                  "sigma_u": round(float(pr["sigma_u"]), 2)})
+            continue
         post = idata.posterior
         for t in tracked:
             if "[" in t:
@@ -182,10 +192,13 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
             passed = False
     # a pipeline whose small-data fits routinely fail or misbehave is not
     # validated by the survivors' rank uniformity
-    if (n_failed + n_diag_failed) > 0.2 * R:
+    report["failed_fit_truths"] = failed_truths
+    if (n_failed + n_diag_failed) > 0.1 * R:
         passed = False
-        report["failure_note"] = "more than 20% of replications failed or failed diagnostics"
+        report["failure_note"] = "more than 10% of replications failed or failed diagnostics"
     report["passed"] = passed
+    from .fit import STAN_FILE, sha256_file
+    report["stan_sha256"] = sha256_file(STAN_FILE)
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")
     return report
