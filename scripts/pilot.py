@@ -80,7 +80,10 @@ def main() -> int:
           "| conditional:", rep["conditional"]["passed"])
 
     if not args.skip_loco:
+        # held-out-family geometry mixes slowly; 2000/2000 keeps fold fits
+        # inside the production diagnostics gate
         lrep = loco(items, X, human, cont, None, K=7,
+                    iter_warmup=2000, iter_sampling=2000,
                     out_path=RUN / "loco.json", input_hashes=input_hashes)
         print("LOCO:", json.dumps({k: v for k, v in lrep.items()
                                    if k not in ("per_family",)}))

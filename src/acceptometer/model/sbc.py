@@ -126,13 +126,24 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
         data = _simulate_given(pr, rng, n_constr, items_per_constr, n_part,
                                ratings_per_item, K, M_c, M_b, P)
         try:
-            fit, idata = fit_model(data, seed=seed + r, iter_warmup=300,
-                                   iter_sampling=300, chains=2)
+            fit, idata = fit_model(data, seed=seed + r, iter_warmup=500,
+                                   iter_sampling=500, chains=2)
         except Exception:
             n_failed += 1
             continue
-        from .fit import diagnostics_gate
-        if not diagnostics_gate(fit, idata)["passed"]:
+        # per-fit sanity check scaled to SBC's small fits: the production
+        # gate's ESS>400 is unreachable with 2x300 draws by construction.
+        # Ranks need R-hat convergence, few divergences, and enough effective
+        # draws to support n_thin thinned ranks.
+        import numpy as _np
+        div = int(_np.sum(fit.method_variables()["divergent__"]))
+        ndr = int(_np.prod(fit.method_variables()["divergent__"].shape))
+        import arviz as _az
+        summ = _az.summary(idata, var_names=[v for v in ("beta", "sigma_s",
+                           "tau_constr", "tau_item", "sigma_u")
+                           if v in idata.posterior])
+        if not (div / ndr < 0.01 and float(summ["r_hat"].max()) < 1.02
+                and float(summ["ess_bulk"].min()) > 100):
             n_diag_failed += 1
         post = idata.posterior
         for t in tracked:
