@@ -34,6 +34,9 @@ def main() -> int:
     human = pd.read_csv("data/pilot_human.csv")
     hm = human.groupby("item_id").rating.mean()
     ms = load_measurements(RUN / "measurements.jsonl")
+    multi = Path("runs/multi/measurements.jsonl")
+    if multi.exists():
+        ms += load_measurements(multi)
     df = pd.DataFrame([{"item_id": m.item_id, "cell_id": m.cell_id,
                         "kind": m.kind, "value": m.value} for m in ms])
 
@@ -61,7 +64,7 @@ def main() -> int:
                 .reindex(range(1, 8), fill_value=0.0))
     out["category_usage"] = {
         "human": {str(k): round(float(p), 3) for k, p in hu_usage.items()}}
-    scal = df[df.cell_id.str.contains("prompt_scalar")]
+    scal = df[df.cell_id.str.contains("prompt_scalar")]  # includes batch cells
     for cell, grp in scal.groupby(scal.cell_id.str.replace(r"/p\d$", "", regex=True)):
         usage = (grp.value.astype(int).value_counts(normalize=True)
                  .reindex(range(1, 8), fill_value=0.0))

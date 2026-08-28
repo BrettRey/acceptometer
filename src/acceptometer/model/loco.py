@@ -202,6 +202,11 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
             v["diagnostics_passed"] for v in per_family.values()),
         "input_hashes": input_hashes or {},
     }
+    # LOCO refits the model, so it binds by BOTH input hashes and Stan source:
+    # a report generated under an older model with the same inputs must refuse
+    from .fit import STAN_FILE
+    from .fit import sha256_file as _sha
+    report["stan_sha256"] = _sha(STAN_FILE)
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")
     return report

@@ -177,6 +177,9 @@ def build_warrant(run_dir: str | Path, estimand: dict,
         want = run.get("input_hashes") or {}
         got = child.get("input_hashes") or {}
         ok = bool(want) and got == want          # exact map equality
+        if ok and child.get("stan_sha256") != stan_sha:
+            binding[name] = "generated under a different model (stan hash differs)"
+            return False
         binding[name] = ("bound" if ok else
                          "input-hash map differs from run.json (exact equality required)")
         return ok

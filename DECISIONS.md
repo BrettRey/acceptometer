@@ -115,6 +115,30 @@ zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
 rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
 population-transfer test, temporal drift evidence.
 
+2026-08-27 — Cross-model marginal-band result (five judge families; Opus 4.6
+elicited via agy with a quota-safe batched protocol, 18 calls, 0 parse
+failures; batch protocol recorded in the cell identity): aggregate r with
+human item means rises with capability (.35 pythia -> .72 qwen8b -> .74
+gemma12b -> .79 mistral24b -> .83 opus4.6, human split-half ceiling .857) and
+the contested-band r rises too but lags everywhere (-.18 -> .18 -> .28 ->
+.24 -> .40, vs .85-.94 outside the band). The middle-band deficit is
+class-wide and scale-mitigated, not solved; Opus also avoids category 4
+(5% vs humans' 13.5%). Copilot CLI probed: accepts claude-sonnet-4.6, no
+Opus tier, so agy is the Opus route.
+
+2026-08-27 — Final pipeline PPC verdict (post participant-style checks): the
+single failing discrepancy is participant-level category-usage entropy
+(ppp .000 conditional / .006 marginal); all family-level, item-level,
+category, and instrument-arm checks pass. Diagnosis: real raters have
+idiosyncratic scale-use styles the additive intercept cannot compress or
+expand — review 3's predicted misfit, caught by the check built for it.
+v1 keeps the conservative pre-commitment (any PPC failure blocks all
+deployment claims); rater-style modeling and a per-tier PPC consequence map
+are v2. LOCO binding hole closed the same hour: LOCO now stamps the Stan
+hash so a report generated under an older model refuses even with matching
+input hashes (the review-3 stale-evidence scenario, found live when the
+pre-is_new loco.json would have bound).
+
 2026-08-27 — Assurance machinery folded in from Brett's AI-safety papers
 (adversarial-pragmatics / delegation-assurance / evidentiary-assurance /
 ai-evaluation-kinds), at Brett's direction after the cross-reading: (1)
