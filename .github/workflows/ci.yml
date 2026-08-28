@@ -1,0 +1,25 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.8.13"
+          enable-cache: true
+      - name: Install Python 3.12 and dependencies
+        run: uv sync --extra dev --frozen
+      - name: Run tests that do not require CmdStan
+        run: uv run pytest -m "not slow"
+      - name: Check the published judge table
+        run: uv run python scripts/judge_table.py --check

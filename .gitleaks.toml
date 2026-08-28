@@ -1,0 +1,10 @@
+title = "Acceptometer Gitleaks configuration"
+
+[extend]
+useDefault = true
+
+[[allowlists]]
+description = "Provenance manifest records upstream 40-character Git commit SHAs"
+regexTarget = "match"
+paths = ['''^data/MANIFEST\.yaml$''']
+regexes = ['''latest_commit_at_access:\s+[0-9a-f]{40}''']

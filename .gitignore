@@ -3,8 +3,13 @@ llm-grammaticality-judgments-survey.md
 .venv/
 __pycache__/
 *.pyc
+.pytest_cache/
+dist/
+build/
+*.egg-info/
 data/raw/
 runs/
+plans/
 *.csv.gz
 .DS_Store
 # compiled Stan binaries

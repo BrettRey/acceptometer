@@ -1,0 +1,133 @@
+{
+  "schema_version": 1,
+  "release": "v0.1.0",
+  "generated": "2026-08-28",
+  "licence_status": "descriptive_only",
+  "display": {
+    "bold_r_all_min": 0.80,
+    "bold_best_band_after_rounding": true,
+    "human_ceiling_digits": 3
+  },
+  "marginal_band": {
+    "human_mean_inclusive": [3.0, 5.0],
+    "n_items": 47,
+    "n_outside": 73,
+    "n_total": 120
+  },
+  "human": {
+    "split_half_r_mean_200_splits": 0.857,
+    "spearman_brown_corrected": 0.923,
+    "category_4_share": 0.135
+  },
+  "judges": [
+    {
+      "instrument_id": "claude-opus-4.6-agy/prompt_scalar_batch20",
+      "label": "Claude Opus 4.6 (agy, batched)",
+      "harness": "agy",
+      "r_all": 0.834,
+      "r_marginal_band": 0.397,
+      "r_outside_band": 0.935,
+      "category_4_share": 0.050
+    },
+    {
+      "instrument_id": "claude-opus-5-claude-code/prompt_scalar_batch20",
+      "label": "Claude Opus 5 (Claude Code, batched)",
+      "harness": "Claude Code 2.1.250",
+      "r_all": 0.832,
+      "r_marginal_band": 0.334,
+      "r_outside_band": 0.940,
+      "category_4_share": 0.064
+    },
+    {
+      "instrument_id": "qwen3.8:27b/prompt_scalar",
+      "label": "qwen3.8:27b (local; 3 obs/item)",
+      "harness": "Ollama",
+      "r_all": 0.812,
+      "r_marginal_band": 0.418,
+      "r_outside_band": 0.907,
+      "category_4_share": 0.047
+    },
+    {
+      "instrument_id": "gpt-5.6-sol-codex/prompt_scalar_batch20",
+      "label": "GPT-5.6 Sol (Codex, batched)",
+      "harness": "Codex 0.149.1",
+      "r_all": 0.799,
+      "r_marginal_band": 0.357,
+      "r_outside_band": 0.913,
+      "category_4_share": 0.047
+    },
+    {
+      "instrument_id": "mistral-small:24b-instruct-2501-q4_K_M/prompt_scalar",
+      "label": "mistral-small 24B",
+      "harness": "Ollama",
+      "r_all": 0.791,
+      "r_marginal_band": 0.236,
+      "r_outside_band": 0.866,
+      "category_4_share": 0.193
+    },
+    {
+      "instrument_id": "gpt-5.6-luna-codex/prompt_scalar_batch20",
+      "label": "GPT-5.6 Luna (Codex, batched)",
+      "harness": "Codex 0.149.1",
+      "r_all": 0.775,
+      "r_marginal_band": 0.417,
+      "r_outside_band": 0.882,
+      "category_4_share": 0.061
+    },
+    {
+      "instrument_id": "gemma3:12b/prompt_scalar",
+      "label": "gemma3 12B",
+      "harness": "Ollama",
+      "r_all": 0.745,
+      "r_marginal_band": 0.275,
+      "r_outside_band": 0.852,
+      "category_4_share": 0.151
+    },
+    {
+      "instrument_id": "qwen3:8b/prompt_scalar",
+      "label": "qwen3 8B",
+      "harness": "Ollama",
+      "r_all": 0.724,
+      "r_marginal_band": 0.183,
+      "r_outside_band": 0.851,
+      "category_4_share": 0.083
+    },
+    {
+      "instrument_id": "gpt-5.6-terra-codex/prompt_scalar_batch20",
+      "label": "GPT-5.6 Terra (Codex, batched)",
+      "harness": "Codex 0.149.1",
+      "r_all": 0.714,
+      "r_marginal_band": 0.335,
+      "r_outside_band": 0.848,
+      "category_4_share": 0.025
+    },
+    {
+      "instrument_id": "glm-4.7-flash:q4_K_M/prompt_scalar",
+      "label": "glm-4.7-flash",
+      "harness": "Ollama",
+      "r_all": 0.612,
+      "r_marginal_band": 0.073,
+      "r_outside_band": 0.709,
+      "category_4_share": 0.335
+    },
+    {
+      "instrument_id": "pythia-160m/slor",
+      "label": "Pythia-160m SLOR",
+      "harness": "Transformers",
+      "r_all": 0.350,
+      "r_marginal_band": -0.179,
+      "r_outside_band": 0.505,
+      "category_4_share": null
+    }
+  ],
+  "source_sha256": {
+    "data/pilot_human.csv": "5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec",
+    "data/pilot_items.jsonl": "f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c",
+    "runs/pilot/measurements.jsonl": "1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a",
+    "runs/multi/measurements.jsonl": "07ff6515edc4e86878fbafddb18d6ad6b25afcdd31c4fa607275911eda66a26b",
+    "runs/pilot/response_style.json": "3d4d57c8e91fc56af976830585afcbbf4902fd1ce7e2e1cdfc60fb93bb80e16b",
+    "runs/pilot/split_half.json": "7e4de3bad0b527424af783932d49e7862e033d6c46ce82ed3f945c170e93dabd",
+    "src/acceptometer/model/acceptometer.stan": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86",
+    "src/acceptometer/thresholds.yaml": "2388075641560db3f33f509ece14f4ca31a1875933673518ff15b5cdc14640d3"
+  }
+}

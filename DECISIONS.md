@@ -1,5 +1,5 @@
 # DECISIONS — llm-acceptability-judgments
-<!-- SUMMARY: Decision log for the acceptometer build · status: active · updated: 2026-08-27 -->
+<!-- SUMMARY: Decision log for the acceptometer build · status: active · updated: 2026-08-28 -->
 
 2026-08-27 — Build the tool as a joint Bayesian measurement-error model (Stan),
 not a correlation pipeline. Origin: Brett asked what Gelman would say about the
@@ -35,6 +35,38 @@ survey is a local resource only.
 2026-08-27 — Local-first instruments (Pythia logprobs, Ollama chat judges); API
 adapters stubbed and off by default. Reason: free, reproducible, versionable;
 API elicitation is a deliberate decision with a drift plan, not a default.
+
+2026-08-28 — Frontier-judge extension run through the models' coding-agent
+harnesses rather than new API adapters: Claude Opus 5 (`claude-opus-5`) via
+Claude Code 2.1.250 at model-default adaptive thinking, and GPT-5.6 Sol,
+Terra, and Luna via Codex 0.149.1 at medium reasoning. All four preserve the
+Opus 4.6 batched protocol (20 items/call, 3 deterministically shuffled passes,
+18 calls/model) and record harness, exact model, version, reasoning setting,
+prompt hash, and access time in each measurement. Run result: 1,440/1,440
+ratings, 0 failed batches, complete 120-item x 3-repeat coverage, no invalid
+values or duplicate keys. Descriptive correlations (all / 47-item contested
+band / outside): Opus 5 .832/.334/.940; GPT-5.6 Sol .799/.357/.913; Terra
+.714/.335/.848; Luna .775/.417/.882. Opus 5 ties Opus 4.6 overall but not in
+the band; Luna, not Sol, leads the GPT tiers in the band; qwen3.8:27b remains
+competitive at .812/.418/.907. All four new judges underuse category 4
+(2.5%--6.4% vs humans' 13.5%). These are descriptive cells only: the Stan fit
+and descriptive_only warrant were not rerun or expanded. Opus-version effects
+are not identified because Opus 4.6 used agy and Opus 5 used Claude Code; the
+harness stays explicit in the cell identity.
+
+2026-08-28 — Publish v0.1 by strengthening the existing public
+`BrettRey/acceptometer` repository, not by opening a second public project.
+The public boundary is code, specifications, tests, provenance manifests,
+documentation, and a hash-bound aggregate eleven-judge snapshot. Participant
+ratings, sentence text, raw model responses, transcripts, run directories,
+and posterior draws remain ignored and local. No private GitHub data repository
+is created for v0.1: private hosting would not cure the upstream redistribution
+and contact-for-novel-research restrictions, and there is no current
+collaboration need that justifies uploading those materials. The release adds
+an MIT licence for original code and documentation, non-CmdStan CI, a narrow
+Gitleaks false-positive allowance for manifest commit SHAs, and a deterministic
+aggregate-table check. Publication does not upgrade the pilot warrant, which
+remains `descriptive_only`.
 
 2026-08-27 — agy (Gemini 3.1 Pro High) design-review probe discarded: it
 reviewed a different document than the one supplied (described DAG tests and an

@@ -12,6 +12,8 @@ import pandas as pd
 import pytest
 import yaml
 
+pytestmark = pytest.mark.slow
+
 from acceptometer import plots
 from acceptometer.cli import _sim_maps, _write_sim_inputs
 from acceptometer.model import simulate as simmod
