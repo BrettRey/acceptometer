@@ -1,5 +1,5 @@
 # STATUS — acceptometer
-<!-- SUMMARY: Warranted Bayesian LLM-judgment instrument; three reviews adopted, assurance layer from the AI-safety papers folded in, final certificate descriptive_only, cross-model contested-band deficit measured (Opus 4.6 included) · status: v1 complete, pilot final · updated: 2026-08-27 -->
+<!-- SUMMARY: Warranted Bayesian LLM-judgment instrument; three reviews adopted, assurance layer folded in, certificate descriptive_only; seven-judge contested-band table complete (local qwen3.8:27b matches Opus 4.6) · status: v1 complete, pilot final · updated: 2026-08-28 -->
 
 ## Where things stand (2026-08-27, end of build day)
 
