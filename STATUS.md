@@ -1,5 +1,5 @@
 # STATUS — acceptometer
-<!-- SUMMARY: Warranted Bayesian LLM-judgment instrument; two external reviews adopted, enforced-ladder warrant emitted (screening licensed, ranking contamination-capped) · status: v1 complete · updated: 2026-08-27 -->
+<!-- SUMMARY: Warranted Bayesian LLM-judgment instrument; three reviews adopted, assurance layer from the AI-safety papers folded in, final certificate descriptive_only, cross-model contested-band deficit measured (Opus 4.6 included) · status: v1 complete, pilot final · updated: 2026-08-27 -->
 
 ## Where things stand (2026-08-27, end of build day)
 
@@ -24,8 +24,9 @@ v0.1 is built, validated, and has completed a real-data pilot. Full story:
 
 ## next_action
 
-1. If desired, run the rev-4 validation packet past a third family; both prior
-   reviews' findings are triaged in DECISIONS.md and adopted.
+1. If desired, run the rev-5 validation packet past a fresh reviewer; all
+   three prior reviews are triaged in DECISIONS.md and adopted. Final
+   certificate: descriptive_only (contamination + rater-entropy PPC).
 2. v2 candidates, in rough order of value: clean post-cutoff item set (lifts
    the contamination cap and tests aggregate estimation); ordered-logistic
    instrument arm for scalar cells; binary-arm overdispersion; rater-specific

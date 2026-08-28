@@ -1,53 +1,38 @@
-# Acceptometer external validation packet (2026-08-27, rev 4: post-review-2 model)
+# Acceptometer external validation packet (2026-08-27, rev 5: final pilot)
 
 ## Review brief
 
 You are adversarially validating a Bayesian measurement tool that treats LLMs
-as biased instruments for human acceptability judgments. Everything you need
-is in this file. Assume nothing is correct until you have checked it. Report
-findings as a numbered list with severity, exact location, and the concrete
-failure each would cause. Do not review prose style.
-
-Two prior adversarial reviews (attached with full triage) have already been
-adopted: family-varying linking with instrument-by-item error; freed latent
-scale (link-anchored); new/held-out families excluded from the training
-sum-to-zero vector with independent predictive effects; new-family predictive
-reliability as the screening gate; a literally-enforced ladder
-(diagnostics + recovery + SBC + two-mode per-family PPC + complete,
-diagnostics-clean, hash-bound LOCO); contamination caps on ranking and above;
-tie-aware pooled Spearman with family-cluster bootstrap; same-raters LOCO
-target with training-only standardization; SLOR unit consistency and
-checkpoint provenance.
+as biased instruments for human acceptability judgments. Three prior
+adversarial reviews (triage attached) have been adopted; the emitted
+certificate now licenses NO deployment tier (descriptive_only): deployment
+claims are refused as affirmative_failure (a participant-entropy PPC failure)
+and would be vitiated by contamination regardless. Your job: find what all
+three reviewers and the gates still missed, and audit whether the
+descriptive-only verdict and its evidence are themselves sound.
 
 Priority questions:
-
-1. SPEC-VS-CODE DRIFT: DESIGN.md vs acceptometer.stan and warrant.py, line by
-   line where it matters (identification list, reliability quantities, ladder
-   enforcement, run binding).
-2. NEW-FAMILY MECHANISM: is the is_new construction (transformed-data index
-   mapping, sum_to_zero_vector over training families only, independent
-   normal(0, tau_constr) for new) correct and identified? Does anything else
-   still leak training-set information to a held-out family?
-3. PREDICTIVE RELIABILITY: reliability_new draws a fresh slope deviation per
-   posterior draw. Is that the right predictive quantity, and is gating on
-   (median > .5, q10 > .35) coherent given it mixes posterior and predictive
-   uncertainty?
-4. LADDER ENFORCEMENT: find a path through warrant.py that grants a tier on
-   missing, failed, stale, or unbound evidence. The binding uses SHA-256 of
-   posterior.nc and input files via run.json; find the hole.
-5. LOCO: same-raters target, training-only standardization, tie-aware pooled
-   Spearman, family-cluster bootstrap. What still biases the transfer
-   estimate or its lower bound?
-6. PPC: two participant modes, per-family minima gates, category-usage ppp
-   against the replicate reference, instrument residual flags. What misfit
-   slips past all of it?
-7. SBC: prior pushforwards (sum-zero projection, sorted normals, truncated
-   sigma, gamma(2,1)), diagnostics-aware failure cap at 20%, R=100. Any
-   remaining incoherence between the SBC generative process and the model?
+1. SPEC-VS-CODE DRIFT across DESIGN.md, acceptometer.stan, warrant.py,
+   thresholds.yaml.
+2. The directional new-family quantities (p_pos_new, zeroed reversed-slope
+   reliability, within-family variance): right quantities, right gates?
+3. The binding scheme (recomputed posterior/Stan hashes, exact input maps,
+   Stan-hash binding for simulation evidence and LOCO): find a bypass.
+4. newfam_check: does it validate what the warrant uses? Is the
+   family-mean-centered coverage the right identified claim?
+5. The PPC verdict: participant-entropy ppp .000/.006 with everything else
+   passing - is the diagnosis (rater scale-use heterogeneity vs additive
+   intercept) right, and is any-failure-blocks-all the right pre-commitment?
+6. The contested-band analysis (band [3,5], per-cell r inside/outside):
+   any artifact that could produce the observed collapse (restriction of
+   range within the band, measurement error in band membership, regression
+   artifacts)? The band r's are computed on ~47 items with human-mean
+   splitting - quantify what part of the inside/outside gap is mechanical.
+7. The Opus 4.6 batched protocol (20 items/call): what does batching do to
+   comparability with single-item cells, and is the cell-identity separation
+   sufficient?
 8. EVIDENCE CONSISTENCY: verify every number in PILOT-REPORT.md against the
-   attached reports.
-9. WHAT BOTH PRIOR REVIEWERS MISSED.
-
+   attached artifacts.
 
 
 ---
@@ -156,16 +141,23 @@ intervals wider than in-family ones by construction rather than by hope.
 fit- and item-set-specific, with noise = omega_m^2 + sigma_m^2 for replicated
 cells):
 
-- `reliability[m]` — the **global-slope signal ratio**, using beta_m alone.
-  NOT a warrant quantity: a family slope deviation changes how much
-  theta-signal that family's scores carry, so a cell can look reliable
-  globally while carrying no signal in a particular family.
-- `reliability_family[m, c]` — per-family, using the realized slope
-  `beta_m + b_dev_mc`.
-- `reliability_new[m]` — **new-family predictive**: each posterior draw
-  samples a fresh slope deviation, so this posterior is the predictive
-  distribution for a family the instrument has never seen. This is the
-  screening-gate quantity, because screening claims project.
+- `reliability[m]` — the **global-slope signal ratio**, using beta_m alone
+  and the pooled theta variance. Descriptive only, never a warrant quantity.
+- `reliability_family[m, c]` — per-family, WITHIN-family signal variance
+  (tau_item^2), sign-aware: a reversed realized slope scores zero rather than
+  being laundered into signal by squaring.
+- `p_pos_new[m]` and `reliability_new_directional[m]` — the new-family
+  predictive pair: each posterior draw samples a fresh slope deviation;
+  p_pos_new is the predictive probability the new family's slope has the
+  validated orientation, and the directional reliability zeroes reversed
+  draws. Both are model-based extrapolations CONDITIONAL on exchangeability
+  of construction families, which are purposive — the certificate labels them
+  as such wherever they appear. Screening gates on the pair
+  (P(positive) >= 0.95, median > 0.5, q10 > 0.35).
+- **Structural limit**: absolute location of a family with no human anchor is
+  prior-identified, not likelihood-identified (delta-invariance against
+  per-cell family intercepts), so unanchored family-location claims are
+  refused permanently; within-family contrasts are the identified claims.
 
 MORCELA is the special case of one continuous method, no family structure,
 fixed covariates; here the linking is Bayesian, multilevel, and jointly
@@ -193,11 +185,19 @@ ordered cutpoints with normal(0,2) prior. No flat priors anywhere.
    calibration; full SBC documented as future work.
 3. **Real fit.** Human criterion data + real elicitation runs.
 4. **Posterior predictive checks at the real-fit stage, with consequences.**
-   Simulate human samples from the fitted model; compare per-family item-mean
-   spread, category usage, and disagreement structure to the real data. A PPC
-   failure on disagreement structure refuses the distributional tier (already
-   refused in v1) and flags the aggregate tier in the certificate; it is a
-   recorded gate, not a decoration.
+   Human arm: two participant modes (conditional on fitted raters, marginal
+   with fresh raters), per-family discrepancy vectors gated on minima,
+   category usage with a proper replicate reference, and participant
+   response-style checks (entropy, range). Instrument arm: a GATED
+   posterior-predictive check per (cell, family) on the fitted standardized
+   scale with every model term including the item effect — the measurement
+   model that produces every instrument-based claim must fit before any is
+   granted.
+4b. **Simulated new-family recovery** (`newfam_check`): simulate under known
+   truth, withhold whole families' human data, mark them new, and verify the
+   branch the warrant actually uses: within-family theta coverage, positive
+   within-family rank recovery, and reported (unGated) family-location bias —
+   the empirical face of the prior-identification limit.
 5. **Generalization tests** (these feed the warrant):
    - **LOCO-CV:** leave-one-construction-family-out. Refit without family c's
      human data; predict its human item means from LLM scores alone; record
@@ -225,6 +225,24 @@ ordered cutpoints with normal(0,2) prior. No flat priors anywhere.
    epoch t."
 
 ## The warrant certificate (`warrant.yaml`)
+
+The certificate implements the assurance structure of the portfolio's
+AI-safety papers. A grant is an inference licence with a life-cycle
+(ai-evaluation-kinds): the `licence` block states issuer, threshold-spec
+version and hash, expiry conditions (instrument, item-pool, or model change),
+erosion conditions (optimizing anything against the certificate's own gate
+statistics vitiates them), defeat/supersession, and a contestation route.
+Each licensed claim carries the four projective-claim blocks from the shared
+claim-types protocol: declaration (bearer, unit, population, range,
+time/version), the analyst's stated projectibility profile (a hypothesis,
+never fused with the warrant), the warrant itself, and defeaters. Refusals
+are typed with remedies per evidentiary-assurance's verdict separation:
+`unevaluable` (produce the evidence), `shortfall` (adequate evidence, gate
+missed), `affirmative_failure` (fix the model), `vitiated` (contamination),
+`structural` (outside the design's claim space). Thresholds live in a frozen
+versioned spec (`thresholds.yaml`), cited by version and SHA-256; changing a
+gate is a spec revision, never a silent code edit.
+
 
 Machine-readable and human-auditable. Fields:
 
@@ -393,6 +411,56 @@ wordfreq, pyyaml, click, httpx.
   (instrument covariates), the claim tier is refused in v1 certificates.
 - No claim about mechanism, ever. The certificate's refused_claims section is
   permanent on that point.
+
+```
+
+
+---
+
+## FILE: src/acceptometer/thresholds.yaml
+
+```
+# Frozen decision-threshold specification for acceptometer warrants.
+#
+# This file is the single versioned source for every gate value. Certificates
+# cite spec_version and the file's SHA-256, so a threshold change is a visible
+# spec revision, never a silent code edit (practice adopted from the
+# delegation-assurance frozen-specification discipline).
+#
+# Status: pre-registered decision defaults. These are NOT estimand-specific
+# loss analyses; a deployment with a real loss function should derive its own
+# spec revision and say so.
+
+spec_version: 1.0.0
+frozen: 2026-08-27
+
+diagnostics:
+  divergence_rate_max: 0.005
+  rhat_max: 1.01
+  ess_bulk_min: 400
+
+sbc:
+  failure_frac_max: 0.10
+
+ppc:
+  global_ppp_min: 0.01
+  family_ppp_min: 0.005
+  instrument_ppp_min: 0.005
+
+nonresponse_flag_rate: 0.10
+
+screening:
+  p_pos_min: 0.95
+  rel_median_min: 0.5
+  rel_q10_min: 0.35
+
+ranking_within_family:
+  mean_spearman_min: 0.6
+  frac_families_gt_0p3_min: 0.8
+
+aggregate_estimation:
+  coverage_band: [0.75, 0.98]
+  rmse_max_frac_of_observed_sd: 0.75
 
 ```
 
@@ -803,6 +871,71 @@ def recovery_check(idata, truth: SimTruth) -> dict:
 def write_report(report: dict, path: str | Path) -> None:
     Path(path).write_text(json.dumps(report, indent=2) + "\n")
 
+
+def newfam_check(n_new: int = 2, seed: int = 99, **fit_kw) -> dict:
+    """Simulated-LOCO validation of the new-family branch under known truth:
+    simulate, mark n_new families NEW (excluded from the sum-to-zero vector),
+    drop their human observations, fit, and check the quantities the warrant
+    would actually use for a new family. Gates: held-item theta 90% coverage
+    in [0.75, 0.98] AFTER family-mean centering (absolute family location is
+    prior-identified without an anchor -- the delta-invariance with a_dev --
+    so the calibrated claim is the within-family one); within-family rank
+    recovery positive in every held family; and the family-location bias is
+    REPORTED, not gated, as the empirical face of the prior-identification
+    limit."""
+    from .fit import fit_model, diagnostics_gate
+
+    data, truth = simulate(seed=seed)
+    n_constr = data["N_constr"]
+    new_fams = list(range(n_constr - n_new + 1, n_constr + 1))
+    constr = np.array(data["constr"])
+    held_items = {i + 1 for i in range(data["N_item"]) if constr[i] in new_fams}
+
+    keep = [j for j, it in enumerate(data["item_h"]) if it not in held_items]
+    data = dict(data)
+    data["item_h"] = [data["item_h"][j] for j in keep]
+    data["part_h"] = [data["part_h"][j] for j in keep]
+    data["y"] = [data["y"][j] for j in keep]
+    data["N_h"] = len(keep)
+    data["is_new"] = [1 if c in new_fams else 0 for c in range(1, n_constr + 1)]
+
+    fit, idata = fit_model(data, seed=seed, **fit_kw)
+    diag = diagnostics_gate(fit, idata)
+    post = idata.posterior
+    th = post["theta"].stack(d=("chain", "draw")).values
+
+    report = {"n_new_families": n_new, "diagnostics": diag, "per_family": {}}
+    cover_all, rank_ok = [], True
+    for c in new_fams:
+        idx = np.flatnonzero(constr == c)
+        t_true = truth.theta[idx]
+        t_draws = th[idx]                                   # (n_items, L)
+        # center within family, per draw, to test the identified claim
+        t_draws_c = t_draws - t_draws.mean(axis=0, keepdims=True)
+        t_true_c = t_true - t_true.mean()
+        lo, hi = np.percentile(t_draws_c, [5, 95], axis=1)
+        cov = float(np.mean((t_true_c >= lo) & (t_true_c <= hi)))
+        cover_all.append(cov)
+        pm = t_draws.mean(axis=1)
+        rho = float(np.corrcoef(
+            np.argsort(np.argsort(pm)), np.argsort(np.argsort(t_true)))[0, 1])
+        rank_ok = rank_ok and rho > 0
+        loc_bias = float(t_draws.mean() - t_true.mean())
+        report["per_family"][f"fam{c}"] = {
+            "theta_within_coverage90": round(cov, 3),
+            "within_rank_corr_truth": round(rho, 3),
+            "family_location_bias": round(loc_bias, 3),
+        }
+    mean_cov = float(np.mean(cover_all))
+    report["mean_within_coverage90"] = round(mean_cov, 3)
+    report["passed"] = bool(diag["passed"] and 0.75 <= mean_cov <= 0.98 and rank_ok)
+    from .fit import STAN_FILE, sha256_file
+    report["stan_sha256"] = sha256_file(STAN_FILE)
+    report["note"] = ("family_location_bias is reported unGated: absolute "
+                      "location of an unanchored family is prior-identified "
+                      "(delta-invariance with per-cell family intercepts)")
+    return report
+
 ```
 
 
@@ -929,10 +1062,13 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
     rng = np.random.default_rng(seed)
     tracked = ["tau_constr", "tau_item", "sigma_u"] + \
         [f"beta[{m}]" for m in range(1, M_c + 1)] + \
-        [f"sigma_s[{m}]" for m in range(1, M_c + 1)]
+        [f"sigma_s[{m}]" for m in range(1, M_c + 1)] + \
+        [f"tau_b[{m}]" for m in range(1, M_c + 1)] + \
+        [f"omega[{m}]" for m in range(1, M_c + 1)]
     ranks: dict[str, list[int]] = {t: [] for t in tracked}
     n_failed = 0
     n_diag_failed = 0
+    failed_truths: list[dict] = []
 
     for r in range(R):
         pr = _draw_prior(rng, n_constr, K, M_c, M_b, P)
@@ -940,7 +1076,7 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
                                ratings_per_item, K, M_c, M_b, P)
         try:
             fit, idata = fit_model(data, seed=seed + r, iter_warmup=500,
-                                   iter_sampling=500, chains=2)
+                                   iter_sampling=500, chains=4)
         except Exception:
             n_failed += 1
             continue
@@ -957,7 +1093,14 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
                            if v in idata.posterior])
         if not (div / ndr < 0.01 and float(summ["r_hat"].max()) < 1.02
                 and float(summ["ess_bulk"].min()) > 100):
+            # exclude this replication's ranks entirely: draws the check judged
+            # unreliable must not enter the uniformity evidence; record where
+            # in prior space the failures concentrate instead
             n_diag_failed += 1
+            failed_truths.append({"tau_constr": round(float(pr["tau_constr"]), 2),
+                                  "tau_item": round(float(pr["tau_item"]), 2),
+                                  "sigma_u": round(float(pr["sigma_u"]), 2)})
+            continue
         post = idata.posterior
         for t in tracked:
             if "[" in t:
@@ -995,10 +1138,16 @@ def sbc_run(R: int = 40, n_thin: int = 63, seed: int = 5,
             passed = False
     # a pipeline whose small-data fits routinely fail or misbehave is not
     # validated by the survivors' rank uniformity
-    if (n_failed + n_diag_failed) > 0.2 * R:
+    report["failed_fit_truths"] = failed_truths
+    from ..spec import load_spec
+    cap = load_spec()["sbc"]["failure_frac_max"]
+    if (n_failed + n_diag_failed) > cap * R:
         passed = False
-        report["failure_note"] = "more than 20% of replications failed or failed diagnostics"
+        report["failure_note"] = (f"more than {cap:.0%} of replications failed "
+                                  "or failed diagnostics")
     report["passed"] = passed
+    from .fit import STAN_FILE, sha256_file
+    report["stan_sha256"] = sha256_file(STAN_FILE)
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -1134,9 +1283,14 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
 
         cont_std, _ = (_standardize_training_only(cont, train_items)
                        if cont is not None and len(cont) else (None, {}))
+        # nuisance covariates: training-family constants only, applied
+        # unchanged to the held family (inductive, not transductive)
+        tr_rows = [j for j, it in enumerate(items) if it.item_id in train_items]
+        Xtr = np.asarray(X, dtype=float)[tr_rows]
+        X_stats = (Xtr.mean(axis=0), Xtr.std(axis=0))
         data, maps = build_stan_data(items, X, train_human, cont_std, binary,
                                      K=K, standardize_scores=False,
-                                     new_families={fam})
+                                     new_families={fam}, X_stats=X_stats)
         fit, idata = fit_model(data, seed=seed,
                                iter_warmup=iter_warmup, iter_sampling=iter_sampling)
         diag = diagnostics_gate(fit, idata)
@@ -1164,6 +1318,17 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
     pooled_fam = np.array(pooled_fam)
 
     pooled_rho = _spearman(pooled_pred, pooled_obs)
+    # the pooled statistic conflates between-family separation with
+    # within-family ordering (well-separated family means can carry a high
+    # pooled rho over random within-family ranks), so the claim-relevant
+    # quantities are reported separately:
+    fam_pred = pd.Series(pooled_pred).groupby(pd.Series(pooled_fam)).mean()
+    fam_obs = pd.Series(pooled_obs).groupby(pd.Series(pooled_fam)).mean()
+    between_rho = _spearman(fam_pred.to_numpy(), fam_obs.to_numpy())
+    within = [v["spearman"] for v in per_family.values()
+              if v["spearman"] is not None]
+    frac_within_gt_03 = (float(np.mean([w > 0.3 for w in within]))
+                         if within else None)
     # family-cluster bootstrap: rank transfer uncertainty at the level the
     # sampling actually happened (families are the purposive units)
     rng = np.random.default_rng(seed)
@@ -1182,9 +1347,15 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
         "per_family": per_family,
         "n_families": len(per_family),
         "families_tested": sorted(per_family.keys()),
-        "pooled_spearman": round(pooled_rho, 3) if pooled_rho == pooled_rho else None,
+        "pooled_spearman_descriptive": (round(pooled_rho, 3)
+                                        if pooled_rho == pooled_rho else None),
         "pooled_spearman_cluster_boot_lower90": (round(lower90, 3)
                                                  if lower90 is not None else None),
+        "between_family_spearman": (round(between_rho, 3)
+                                    if between_rho == between_rho else None),
+        "within_family_spearman_min": (round(min(within), 3) if within else None),
+        "frac_families_within_spearman_gt_0.3": frac_within_gt_03,
+        "sd_observed_item_means": round(float(np.std(pooled_obs)), 3),
         "mean_spearman": round(float(np.mean(
             [v["spearman"] for v in fams_ok if v["spearman"] is not None])), 3) if fams_ok else None,
         "mean_rmse": round(float(np.mean([v["rmse"] for v in fams_ok])), 3) if fams_ok else None,
@@ -1193,6 +1364,11 @@ def loco(items: list, X: np.ndarray, human: pd.DataFrame,
             v["diagnostics_passed"] for v in per_family.values()),
         "input_hashes": input_hashes or {},
     }
+    # LOCO refits the model, so it binds by BOTH input hashes and Stan source:
+    # a report generated under an older model with the same inputs must refuse
+    from .fit import STAN_FILE
+    from .fit import sha256_file as _sha
+    report["stan_sha256"] = _sha(STAN_FILE)
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")
     return report
@@ -1233,6 +1409,7 @@ def build_stan_data(
     K: int = 7,
     standardize_scores: bool = True,
     new_families: set | None = None,
+    X_stats: tuple | None = None,
 ) -> tuple[dict, dict]:
     """Returns (stan_data, index_maps). index_maps records the id->index
     mappings and per-cell standardization constants so posteriors can be
@@ -1243,8 +1420,12 @@ def build_stan_data(
     constr_ix = {c: i + 1 for i, c in enumerate(constrs)}
 
     X = np.asarray(X, dtype=float)
-    X_mean, X_sd = X.mean(axis=0), X.std(axis=0)
-    X_sd[X_sd == 0] = 1.0
+    if X_stats is not None:
+        X_mean, X_sd = (np.asarray(X_stats[0], dtype=float),
+                        np.asarray(X_stats[1], dtype=float))
+    else:
+        X_mean, X_sd = X.mean(axis=0), X.std(axis=0)
+    X_sd = np.where(X_sd == 0, 1.0, X_sd)
     Xs = (X - X_mean) / X_sd
 
     new_families = new_families or set()
@@ -1368,15 +1549,23 @@ def fit_model(data: dict, out_dir: str | Path | None = None, seed: int = 1,
 
 
 def diagnostics_gate(fit, idata) -> dict:
-    """Hard gate: divergences < 0.5%, max R-hat < 1.01, min bulk ESS > 400
-    on core parameters. Returns report dict with `passed`."""
+    """Hard gate on core parameters; thresholds come from the frozen spec
+    (thresholds.yaml). Divergence tolerance is deliberately nonzero: Stan's
+    strict reading is that any divergence is suspect, and the rate is always
+    reported so a stricter reader can refuse. Returns report with `passed`."""
     import arviz as az
+
+    from ..spec import load_spec
+    g = load_spec()["diagnostics"]
 
     div = int(np.sum(fit.method_variables()["divergent__"]))
     n_draws = int(np.prod(fit.method_variables()["divergent__"].shape))
     core = [v for v in ["beta", "sigma_s", "tau_constr", "tau_item", "tau_a",
-                        "tau_b", "omega", "kappa", "sigma_u", "b_b"]
+                        "tau_b", "omega", "kappa", "sigma_u", "b_b",
+                        "a_dev", "b_dev", "theta"]
             if v in idata.posterior]
+    if "mu_new_raw" in idata.posterior and idata.posterior["mu_new_raw"].shape[-1] > 0:
+        core.append("mu_new_raw")
     summ = az.summary(idata, var_names=core)
     rhat_max = float(summ["r_hat"].max())
     ess_min = float(summ["ess_bulk"].min())
@@ -1385,7 +1574,9 @@ def diagnostics_gate(fit, idata) -> dict:
         "divergence_rate": round(div / n_draws, 4),
         "rhat_max": round(rhat_max, 4),
         "ess_bulk_min": int(ess_min),
-        "passed": bool(div / n_draws < 0.005 and rhat_max < 1.01 and ess_min > 400),
+        "passed": bool(div / n_draws < g["divergence_rate_max"]
+                       and rhat_max < g["rhat_max"]
+                       and ess_min > g["ess_bulk_min"]),
     }
     return report
 
@@ -1427,6 +1618,46 @@ def save_fit(idata, maps: dict, report: dict, out_dir: str | Path,
     }
     (out / "run.json").write_text(json.dumps(run, indent=2))
 
+
+def mode_audit(data: dict, seed: int = 3, iter_warmup: int = 750,
+               iter_sampling: int = 750) -> dict:
+    """Deliberately overdispersed-start check for the known reflection basin.
+
+    Data-informed inits place all production chains in one basin; agreement
+    among them cannot show the other basin has negligible mass. This audit
+    runs extra chains from random inits and compares the best log posterior
+    density found in each orientation (sign of the first instrument slope).
+    A reflected basin within ~10 lp of the main one is a hard warning: the
+    posterior is genuinely bimodal and single-basin results are truncated."""
+    import arviz as az
+    from cmdstanpy import CmdStanModel
+
+    model = CmdStanModel(stan_file=str(STAN_FILE))
+    fit = model.sample(data=data, chains=4, parallel_chains=4,
+                       iter_warmup=iter_warmup, iter_sampling=iter_sampling,
+                       adapt_delta=0.95, seed=seed, show_progress=False)
+    idata = az.from_cmdstanpy(fit)
+    lp = fit.method_variables()["lp__"]                    # (draws, chains)
+    beta0 = idata.posterior["beta"].values[..., 0]          # (chains, draws)
+    lp_by_chain = lp.T                                      # (chains, draws)
+    pos_mask = beta0.mean(axis=1) > 0
+    out = {
+        "chains_positive_orientation": int(pos_mask.sum()),
+        "chains_negative_orientation": int((~pos_mask).sum()),
+        "max_lp_positive": (round(float(lp_by_chain[pos_mask].max()), 1)
+                            if pos_mask.any() else None),
+        "max_lp_negative": (round(float(lp_by_chain[~pos_mask].max()), 1)
+                            if (~pos_mask).any() else None),
+    }
+    if out["max_lp_positive"] is not None and out["max_lp_negative"] is not None:
+        gap = out["max_lp_positive"] - out["max_lp_negative"]
+        out["lp_gap_positive_minus_negative"] = round(float(gap), 1)
+        out["bimodality_warning"] = bool(abs(gap) < 10)
+    else:
+        out["lp_gap_positive_minus_negative"] = None
+        out["bimodality_warning"] = False
+    return out
+
 ```
 
 
@@ -1454,13 +1685,18 @@ Discrepancies, per mode:
   y's category frequencies and the mean replicate frequencies, compared for
   the observed data against the replicate distribution of the same statistic.
 
-Plus an instrument-arm residual check: standardized mean residual per
-(cell, family) from the posterior-mean linking; |z| > 3 is flagged (warn-only:
-family deviations should absorb real structure, so a flag here means the
-fitted deviations did not).
+- participant response style: mean per-participant category-usage entropy
+  and mean per-participant response range, against the model's additive
+  normal-intercept account of rater differences.
+
+Plus a GATED instrument-arm posterior predictive check on the fitted
+(standardized) score scale, per (cell, family), with every model term
+including the item effect: this is the measurement model that produces every
+instrument-based claim, so its failure blocks them.
 
 Gates (pre-committed): global ppps >= 0.01, min per-family ppp >= 0.005
-(Bonferroni-flavored), category ppp >= 0.01, in BOTH participant modes.
+(Bonferroni-flavored), category ppp >= 0.01, participant-style ppps >= 0.01,
+in BOTH participant modes; instrument min ppp >= 0.005.
 """
 
 from __future__ import annotations
@@ -1509,21 +1745,33 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
     fam_col = human["item_id"].map(fam_of).to_numpy()
     fams = sorted(set(fam_col))
 
+    part_col = human["participant_id"].to_numpy()
+
     def stats(y):
         df = pd.DataFrame({"y": y, "item": human["item_id"].to_numpy(),
-                           "fam": fam_col})
+                           "fam": fam_col, "part": part_col})
         item_means = df.groupby("item")["y"].mean()
         fam_of_item = df.groupby("item")["fam"].first()
         spread_by_fam = item_means.groupby(fam_of_item).std()
         within = df.groupby("item")["y"].std()
         within_by_fam = within.groupby(fam_of_item).mean()
         cats = np.bincount(y, minlength=K + 1)[1:] / len(y)
+
+        def _entropy(v):
+            pr = np.bincount(v, minlength=K + 1)[1:] / len(v)
+            pr = pr[pr > 0]
+            return float(-(pr * np.log(pr)).sum())
+        by_part = df.groupby("part")["y"]
+        part_entropy = float(by_part.apply(
+            lambda v: _entropy(v.to_numpy())).mean())
+        part_range = float((by_part.max() - by_part.min()).mean())
         return (spread_by_fam.reindex(fams).to_numpy(),
                 float(within.mean()),
                 within_by_fam.reindex(fams).to_numpy(),
-                cats)
+                cats, part_entropy, part_range)
 
-    obs_spread, obs_within, obs_within_fam, obs_cats = stats(y_obs)
+    (obs_spread, obs_within, obs_within_fam, obs_cats,
+     obs_pent, obs_prange) = stats(y_obs)
 
     draws = rng.choice(L, size=min(n_sims, L), replace=True)
     report: dict = {"n_sims": len(draws), "families": fams}
@@ -1532,7 +1780,7 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
     all_pass = True
 
     for mode in ("conditional", "marginal"):
-        sp, wi, wif, cats_list = [], [], [], []
+        sp, wi, wif, cats_list, pent, prange = [], [], [], [], [], []
         for d in draws:
             if mode == "conditional":
                 u_d = u[:, d]
@@ -1540,10 +1788,12 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
                 u_d = rng.normal(0.0, sigma_u[d], u.shape[0])
             y_sim = _simulate_ratings(theta[:, d], u_d, kappa[:, d],
                                       item_idx0, part_idx0, rng)
-            a, b, c, k = stats(y_sim)
+            a, b, c, k, pe, pr = stats(y_sim)
             sp.append(a); wi.append(b); wif.append(c); cats_list.append(k)
+            pent.append(pe); prange.append(pr)
         sp = np.array(sp); wi = np.array(wi); wif = np.array(wif)
         cats_arr = np.array(cats_list)
+        pent = np.array(pent); prange = np.array(prange)
 
         fam_ppps = {f: _ppp(obs_spread[j], sp[:, j]) for j, f in enumerate(fams)
                     if obs_spread[j] == obs_spread[j]}
@@ -1562,44 +1812,73 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
             "within_item_sd_global_ppp": _ppp(obs_within, wi),
             "within_item_sd_family_ppp_min": min(wif_ppps.values()),
             "category_usage_ppp": round(cat_ppp, 4),
+            "participant_entropy_ppp": _ppp(obs_pent, pent),
+            "participant_range_ppp": _ppp(obs_prange, prange),
         }
-        mode_pass = (mode_report["within_item_sd_global_ppp"] >= 0.01
-                     and mode_report["family_spread_ppp_min"] >= 0.005
-                     and mode_report["within_item_sd_family_ppp_min"] >= 0.005
-                     and mode_report["category_usage_ppp"] >= 0.01)
+        from ..spec import load_spec
+        gp = load_spec()["ppc"]
+        mode_pass = (mode_report["within_item_sd_global_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["family_spread_ppp_min"] >= gp["family_ppp_min"]
+                     and mode_report["within_item_sd_family_ppp_min"] >= gp["family_ppp_min"]
+                     and mode_report["category_usage_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["participant_entropy_ppp"] >= gp["global_ppp_min"]
+                     and mode_report["participant_range_ppp"] >= gp["global_ppp_min"])
         mode_report["passed"] = bool(mode_pass)
         report[mode] = mode_report
         all_pass = all_pass and mode_pass
 
-    # instrument-arm residual check (warn-only)
+    # instrument-arm posterior-predictive check, on the FITTED (standardized)
+    # score scale, with every model term including the item effect and its
+    # uncertainty: per (cell, family), ppp of the observed mean standardized
+    # score against replicates simulated from the full posterior. Gated: this
+    # is the measurement model that produces every instrument-based claim.
     if cont is not None and len(cont) and "beta" in post:
-        flags = []
-        beta = post["beta"].mean(dim=("chain", "draw")).values
-        alpha = post["alpha"].mean(dim=("chain", "draw")).values
-        a_dev = post["a_dev"].mean(dim=("chain", "draw")).values
-        b_dev = post["b_dev"].mean(dim=("chain", "draw")).values
-        gamma = post["gamma"].mean(dim=("chain", "draw")).values
-        sigma_s = post["sigma_s"].mean(dim=("chain", "draw")).values
-        th = theta.mean(axis=1)
-        Xs = np.asarray(maps.get("X_standardized")) if maps.get("X_standardized") else None
+        std = maps.get("cell_standardization", {})
+        cs = cont.copy()
+        for cell, const in std.items():
+            mrow = cs["cell_id"] == cell
+            cs.loc[mrow, "value"] = (cs.loc[mrow, "value"] - const["mean"]) / const["sd"]
+        beta_d = post["beta"].stack(d=("chain", "draw")).values
+        alpha_d = post["alpha"].stack(d=("chain", "draw")).values
+        a_dev_d = post["a_dev"].stack(d=("chain", "draw")).values
+        b_dev_d = post["b_dev"].stack(d=("chain", "draw")).values
+        gamma_d = post["gamma"].stack(d=("chain", "draw")).values
+        sigma_d = post["sigma_s"].stack(d=("chain", "draw")).values
+        omega_d = post["omega"].stack(d=("chain", "draw")).values
+        e_d = post["e_raw"].stack(d=("chain", "draw")).values
+        Xs = (np.asarray(maps["X_standardized"])
+              if maps.get("X_standardized") else None)
         cix = {c: j for j, c in enumerate(maps["cont_cells"])}
         constr_of = {iid: fam_of[iid] for iid in maps["item_ids"]}
         fam_ix = {f: j for j, f in enumerate(maps["constructions"])}
-        for (cell, fam), grp in cont.assign(
-                fam=cont["item_id"].map(constr_of)).groupby(["cell_id", "fam"]):
+        sub = rng.choice(theta.shape[1], size=min(400, theta.shape[1]),
+                         replace=False)
+        inst_ppps = {}
+        for (cell, fam), grp in cs.assign(
+                fam=cs["item_id"].map(constr_of)).groupby(["cell_id", "fam"]):
             m = cix.get(cell)
             if m is None:
                 continue
             c = fam_ix[fam]
             ii = grp["item_id"].map(item_pos).to_numpy()
-            mu = (alpha[m] + a_dev[m, c] + (beta[m] + b_dev[m, c]) * th[ii])
-            if Xs is not None:
-                mu = mu + Xs[ii] @ gamma[m]
-            resid = grp["value"].to_numpy() - mu
-            z = resid.mean() / (sigma_s[m] / np.sqrt(len(resid)))
-            if abs(z) > 3:
-                flags.append({"cell": cell, "family": fam, "z": round(float(z), 2)})
-        report["instrument_residual_flags"] = flags
+            obs_mean = float(grp["value"].mean())
+            reps = np.empty(len(sub))
+            for jj, d in enumerate(sub):
+                mu = (alpha_d[m, d] + a_dev_d[m, c, d]
+                      + (beta_d[m, d] + b_dev_d[m, c, d]) * theta[ii, d]
+                      + omega_d[m, d] * e_d[m, ii, d])
+                if Xs is not None:
+                    mu = mu + Xs[ii] @ gamma_d[m, :, d]
+                reps[jj] = float(np.mean(
+                    mu + rng.normal(0.0, sigma_d[m, d], len(ii))))
+            inst_ppps[f"{cell}|{fam}"] = _ppp(obs_mean, reps)
+        report["instrument_ppc"] = {
+            "cell_family_ppp": inst_ppps,
+            "min_ppp": min(inst_ppps.values()) if inst_ppps else None,
+            "passed": bool(inst_ppps and min(inst_ppps.values())
+                           >= load_spec()["ppc"]["instrument_ppp_min"]),
+        }
+        all_pass = all_pass and report["instrument_ppc"]["passed"]
     report["passed"] = bool(all_pass)
     if out_path:
         Path(out_path).write_text(json.dumps(report, indent=2) + "\n")
@@ -1616,49 +1895,58 @@ def ppc_human(idata, maps: dict, human: pd.DataFrame,
 """Validity-certificate builder (warrant.yaml).
 
 The certificate answers the projectibility question the posterior cannot:
-which claim tiers does the evidence on disk license? Every number in the
-certificate comes from a file actually read out of the run directory; missing
-or failed evidence refuses the dependent tiers, it never grants them; and
-evidence is refused unless it is BOUND to the posterior it claims to certify
-(via run.json hashes), so a stale or copied report cannot license a different
-fit.
+which claims does the evidence on disk license? Principles, enforced in code:
 
-The validation ladder is enforced literally:
-  screening            needs diagnostics + fake-data recovery + SBC, all
-                       passed, plus an unflagged cell whose NEW-FAMILY
-                       predictive reliability clears the gate (the global
-                       slope ratio is not a warrant quantity: a family slope
-                       deviation changes how much signal that family's scores
-                       carry).
-  ranking              additionally needs LOCO: present, bound, every family
-                       tested, all fold diagnostics passed, pooled tie-aware
-                       Spearman > 0.6 with family-cluster bootstrap lower-90
-                       > 0.5, and contamination assessed clean (LOCO rewards
-                       contamination, so a suspect item source caps ranking
-                       too).
-  aggregate_estimation additionally needs the PPC (present, bound, both
-                       participant modes passed) and LOCO coverage in band.
-  everything above     refused in v1 with reasons; individual simulation and
-                       mechanism claims permanently.
+- Every number comes from a file actually read; missing or failed evidence
+  refuses dependent claims, never grants them.
+- Evidence binds by RECOMPUTED hashes (posterior, Stan source, exact
+  input-hash maps); a swapped posterior, edited manifest, or stale report
+  invalidates.
+- Contamination vitiates every deployment tier, screening included.
+- Claims are a matrix, not a ladder; aggregate estimation does not presuppose
+  ranking and carries a sharpness gate.
+- New-family quantities are sign-aware and labeled as model-based
+  extrapolations conditional on family exchangeability.
+- Absolute location of an unanchored family is prior-identified, so those
+  claims are refused structurally.
 
-Thresholds are pre-registered decision defaults, not estimand-specific loss
-analyses; the certificate says so.
+Assurance structure adopted from the portfolio's AI-safety papers:
+
+- A grant is a LICENCE WITH A LIFE-CYCLE (ai-evaluation-kinds): the
+  certificate states what expires it, what erodes it (optimization against
+  its own gate statistics), and what defeats or supersedes it, instead of
+  pretending issuance is the end of the story.
+- Each licensed claim carries the four projective-claim blocks (declaration,
+  projectibility profile, warrant, defeaters), and the profile is the
+  analyst's stated hypothesis, never fused with the warrant.
+- Refusals are TYPED with remedies (evidentiary-assurance): an unevaluable
+  record, an adequate record whose showing falls short, affirmative evidence
+  of failure, a vitiated source, and a structural impossibility call for
+  different responses, so the certificate distinguishes them.
+- The certificate names an answerable issuer and a concrete contestation
+  route (evidentiary-assurance's answerability and forum questions, scaled
+  to a research artifact).
+- Thresholds come from a frozen, versioned spec (thresholds.yaml), cited by
+  version and hash (delegation-assurance's frozen-specification practice).
 """
 
 from __future__ import annotations
 
 import datetime
 import json
-from collections import defaultdict
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import yaml
 
+from .model.fit import STAN_FILE, sha256_file
+from .spec import load_spec, spec_identity
+
 TIERS = (
     "screening",
-    "ranking",
+    "ranking_within_family",
+    "family_location_unanchored",
     "aggregate_estimation",
     "effect_reproduction",
     "distributional_claims",
@@ -1666,6 +1954,17 @@ TIERS = (
     "individual_simulation",
     "mechanism_claims",
 )
+
+# refusal types, per the evidentiary-assurance verdict separation
+UNEVALUABLE = "unevaluable"            # evidence missing or unbound
+SHORTFALL = "shortfall"                # adequate evidence, gate not met
+AFFIRMATIVE = "affirmative_failure"    # evidence of failure
+VITIATED = "vitiated"                  # evidence bearing undermined (contamination)
+STRUCTURAL = "structural"              # unsupportable in this design
+
+
+def _refuse(reason: str, rtype: str, remedy: str) -> dict:
+    return {"type": rtype, "reason": reason, "remedy": remedy}
 
 
 def _read_json(path: Path) -> dict | None:
@@ -1707,37 +2006,11 @@ def _plain(x):
     return x
 
 
-def _bound(child: dict | None, run: dict | None, how: str) -> tuple[bool, str]:
-    """Check an evidence file's binding to the run manifest."""
-    if child is None:
-        return False, "evidence not produced"
-    if run is None:
-        return False, "run.json missing; evidence cannot be bound to a posterior"
-    if how == "posterior":
-        want = run.get("posterior_sha256")
-        got = child.get("posterior_sha256")
-        if got is None:
-            return False, "evidence carries no posterior_sha256 stamp"
-        if got != want:
-            return False, "evidence is stamped for a different posterior"
-    elif how == "inputs":
-        want = run.get("input_hashes") or {}
-        got = child.get("input_hashes") or {}
-        if not got:
-            return False, "evidence carries no input_hashes stamp"
-        shared = set(want) & set(got)
-        if not shared:
-            return False, "evidence and run share no input hashes"
-        for k in shared:
-            if want[k] != got[k]:
-                return False, f"input hash mismatch on {k}"
-    return True, "bound"
-
-
 def build_warrant(run_dir: str | Path, estimand: dict,
                   out_path: str | Path | None = None) -> dict:
     import arviz as az
 
+    spec = load_spec()
     run_dir = Path(run_dir)
     maps_path = run_dir / "index_maps.json"
     post_path = run_dir / "posterior.nc"
@@ -1752,57 +2025,124 @@ def build_warrant(run_dir: str | Path, estimand: dict,
     diagnostics = _read_json(run_dir / "diagnostics.json")
     recovery = _read_json(run_dir / "recovery.json")
     sbc = _read_json(run_dir / "sbc.json")
+    newfam = _read_json(run_dir / "newfam.json")
     loco = _read_json(run_dir / "loco.json")
     ppc = _read_json(run_dir / "ppc.json")
     manifest_path = run_dir / "grid_manifest.yaml"
     manifest = yaml.safe_load(manifest_path.read_text()) if manifest_path.exists() else None
+    provenance = _read_json(run_dir / "instruments.json")
+    response_style = _read_json(run_dir / "response_style.json")
 
-    # ---- instruments: new-family predictive reliability is the gate quantity
+    # ---- recomputed binding: trust nothing declared, rehash what exists
+    binding: dict[str, str] = {}
+    posterior_sha = sha256_file(post_path)
+    stan_sha = sha256_file(STAN_FILE)
+    if run is None:
+        binding["run"] = "run.json missing: nothing can be bound"
+        bound_core = False
+    else:
+        checks = {
+            "posterior": run.get("posterior_sha256") == posterior_sha,
+            "stan": run.get("stan_sha256") == stan_sha,
+        }
+        binding["run"] = ("bound" if all(checks.values()) else
+                          "MISMATCH: " + ", ".join(k for k, v in checks.items() if not v))
+        bound_core = all(checks.values())
+
+    def _bound_posterior(child: dict | None, name: str) -> bool:
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        got = child.get("posterior_sha256")
+        if got is None:
+            binding[name] = "no posterior stamp"
+            return False
+        ok = got == posterior_sha
+        binding[name] = "bound" if ok else "stamped for a different posterior"
+        return ok
+
+    def _bound_inputs(child: dict | None, name: str) -> bool:
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        if run is None:
+            binding[name] = "run.json missing"
+            return False
+        want = run.get("input_hashes") or {}
+        got = child.get("input_hashes") or {}
+        ok = bool(want) and got == want          # exact map equality
+        if ok and child.get("stan_sha256") != stan_sha:
+            binding[name] = "generated under a different model (stan hash differs)"
+            return False
+        binding[name] = ("bound" if ok else
+                         "input-hash map differs from run.json (exact equality required)")
+        return ok
+
+    def _bound_stan(child: dict | None, name: str) -> bool:
+        """Simulation-based evidence certifies the MODEL, not a posterior:
+        it binds through the Stan source hash."""
+        if child is None:
+            binding[name] = "not produced"
+            return False
+        ok = child.get("stan_sha256") == stan_sha
+        binding[name] = ("bound" if ok else
+                         "generated for a different model (stan hash differs)")
+        return ok
+
+    ppc_bound = _bound_posterior(ppc, "ppc")
+    loco_bound = _bound_inputs(loco, "loco")
+    rec_bound = _bound_stan(recovery, "recovery")
+    sbc_bound = _bound_stan(sbc, "sbc")
+    newfam_bound = _bound_stan(newfam, "newfam")
+
+    # ---- instruments: sign-aware new-family quantities gate; provenance merged
     cont_cells = list(maps.get("cont_cells", []))
     instruments = []
-    rel_new_stats: dict[str, dict] = {}
-    if cont_cells and "reliability_new" in idata.posterior:
-        rel_new = np.asarray(idata.posterior["reliability_new"].values)
-        rel_new = rel_new.reshape(-1, rel_new.shape[-1])
-        rel_glob = np.asarray(idata.posterior["reliability"].values)
-        rel_glob = rel_glob.reshape(-1, rel_glob.shape[-1])
+    gate_stats: dict[str, dict] = {}
+    if cont_cells and "reliability_new_directional" in idata.posterior:
+        rel_dir = np.asarray(idata.posterior["reliability_new_directional"].values)
+        rel_dir = rel_dir.reshape(-1, rel_dir.shape[-1])
+        p_pos = np.asarray(idata.posterior["p_pos_new"].values)
+        p_pos = p_pos.reshape(-1, p_pos.shape[-1])
         rel_fam = np.asarray(idata.posterior["reliability_family"].values)
         rel_fam = rel_fam.reshape(-1, rel_fam.shape[-2], rel_fam.shape[-1])
         alpha = np.asarray(idata.posterior["alpha"].values)
         alpha = alpha.reshape(-1, alpha.shape[-1])
         for j, name in enumerate(cont_cells):
-            med = float(np.median(rel_new[:, j]))
-            q10, q90 = np.percentile(rel_new[:, j], [10, 90])
+            med = float(np.median(rel_dir[:, j]))
+            q10, q90 = np.percentile(rel_dir[:, j], [10, 90])
+            ppos = float(p_pos[:, j].mean())
             fam_meds = np.median(rel_fam[:, j, :], axis=0)
-            rel_new_stats[name] = {"median": med, "q10": float(q10)}
+            gate_stats[name] = {"median": med, "q10": float(q10), "p_pos": ppos}
             entry = {
                 "cell": name,
-                "reliability_new_family_median": round(med, 3),
-                "reliability_new_family_80": [round(float(q10), 3), round(float(q90), 3)],
-                "reliability_by_family": {
+                "p_positive_slope_new_family": round(ppos, 3),
+                "reliability_new_directional_median": round(med, 3),
+                "reliability_new_directional_80": [round(float(q10), 3),
+                                                   round(float(q90), 3)],
+                "reliability_by_family_within": {
                     f: round(float(v), 3)
                     for f, v in zip(maps.get("constructions", []), fam_meds)
                 },
-                "global_slope_signal_ratio_median": round(
-                    float(np.median(rel_glob[:, j])), 3),
                 "alpha_standardized_median": round(float(np.median(alpha[:, j])), 3),
-                "standardization": maps.get("cell_standardization", {}).get(name,
-                                                                            "none recorded"),
+                "standardization": maps.get("cell_standardization", {}).get(
+                    name, "none recorded"),
+                "interpretation": ("model-based extrapolation conditional on "
+                                   "exchangeability of construction families "
+                                   "(purposive sample); within-family signal "
+                                   "variance; reversed-slope draws count as "
+                                   "zero signal"),
             }
+            if provenance and name in provenance:
+                entry["provenance"] = provenance[name]
+            else:
+                entry["provenance"] = "not recorded in run dir"
             instruments.append(entry)
-
-    # prompt invariance from paraphrase-labeled cell names, if any
-    groups: dict[str, list[str]] = defaultdict(list)
-    for name in cont_cells:
-        parts = name.split("/")
-        if len(parts) >= 3:
-            groups["/".join(parts[:2])].append(name)
-    invariance = ("assessed descriptively at the grid level; paraphrases enter "
-                  "the fit as one instrument, so no model-based invariance "
-                  "statistic exists in this fit" if not groups else groups)
 
     estimand = dict(estimand)
     split_half = estimand.pop("human_split_half", "not provided")
+    issued_by = estimand.pop("issued_by", "not named")
+    profiles = estimand.pop("profiles", {}) or {}
     domain = {
         "construction_families": list(maps.get("constructions", [])),
         "n_items_total": (run or {}).get("n_items_total",
@@ -1827,24 +2167,23 @@ def build_warrant(run_dir: str | Path, estimand: dict,
             and contamination.get("status") == "clean"))
 
     nonresponse = (manifest or {}).get("nonresponse") if isinstance(manifest, dict) else None
+    flag_rate = spec["nonresponse_flag_rate"]
     flagged_cells = sorted(
         c for c, r in (nonresponse or {}).items()
-        if isinstance(r, (int, float)) and r > 0.10)
+        if isinstance(r, (int, float)) and r > flag_rate)
 
-    loco_ok, loco_bind_reason = _bound(loco, run, "inputs")
-    ppc_ok_bind, ppc_bind_reason = _bound(ppc, run, "posterior")
+    inst_ppc = (ppc or {}).get("instrument_ppc") if ppc else None
 
     evidence = {
         "run": run if run is not None else "not produced",
+        "binding": binding,
         "diagnostics": diagnostics if diagnostics is not None else "not produced",
         "fake_data_recovery": recovery if recovery is not None else "not produced",
         "sbc": sbc if sbc is not None else "not produced",
+        "new_family_recovery": newfam if newfam is not None else "not produced",
         "loco_transfer": loco if loco is not None else "not produced",
-        "loco_binding": loco_bind_reason,
         "ppc": ppc if ppc is not None else "not produced",
-        "ppc_binding": ppc_bind_reason,
         "multiverse_spread": _multiverse_spread(run_dir),
-        "prompt_invariance": invariance,
         "human_split_half": split_half,
         "contamination": contamination,
         "instrument_nonresponse": (
@@ -1858,340 +2197,294 @@ def build_warrant(run_dir: str | Path, estimand: dict,
                          "time", "model_version (beyond drift sentinels)"]
                         + ([] if loco is not None else ["construction_family"]),
         },
-        "threshold_status": ("pre-registered decision defaults; not yet "
-                             "estimand-specific loss analyses"),
     }
 
-    licensed: dict[str, str] = {}
-    refused: dict[str, str] = {}
+    licensed: dict[str, dict] = {}
+    refused: dict[str, dict] = {}
 
-    # ---- screening: full ladder prerequisite + unflagged predictive reliability
+    # ---- shared prerequisites for ANY instrument-based deployment claim
     diag_ok = bool(diagnostics and diagnostics.get("passed") is True)
-    rec_ok = bool(recovery and recovery.get("passed") is True)
-    sbc_ok = bool(sbc and sbc.get("passed") is True)
-    candidates = {c: v for c, v in rel_new_stats.items() if c not in flagged_cells}
-    best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
-
-    if diagnostics is None:
-        refused["screening"] = "evidence not produced: diagnostics.json missing"
+    prereq: tuple[str, str, str] | None = None   # (reason, type, remedy)
+    if not bound_core:
+        prereq = (f"run binding failed ({binding['run']})", UNEVALUABLE,
+                  "regenerate run.json alongside the posterior it describes")
     elif not diag_ok:
-        refused["screening"] = (
-            f"diagnostics gate failed (rhat_max={diagnostics.get('rhat_max')}, "
-            f"divergence_rate={diagnostics.get('divergence_rate')}, "
-            f"ess_bulk_min={diagnostics.get('ess_bulk_min')})")
-    elif recovery is None:
-        refused["screening"] = "evidence not produced: recovery.json missing (ladder step 1)"
-    elif not rec_ok:
-        refused["screening"] = "fake-data recovery failed (ladder step 1)"
-    elif sbc is None:
-        refused["screening"] = "evidence not produced: sbc.json missing (ladder step 2)"
-    elif not sbc_ok:
-        refused["screening"] = "SBC failed (ladder step 2)"
-    elif best is None:
-        refused["screening"] = ("no unflagged continuous cell carries a "
-                                "new-family predictive reliability")
-    elif best[1]["median"] > 0.5 and best[1]["q10"] > 0.35:
-        licensed["screening"] = (
-            f"full ladder passed and cell {best[0]} new-family predictive "
-            f"reliability median {best[1]['median']:.2f} > 0.5 with "
-            f"q10 {best[1]['q10']:.2f} > 0.35")
-    else:
-        refused["screening"] = (
-            f"best unflagged cell {best[0]}: new-family predictive reliability "
-            f"median {best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} "
-            f"(need median > 0.5 and q10 > 0.35)")
+        prereq = ("diagnostics gate not passed", AFFIRMATIVE,
+                  "fix sampling (iterations, adapt_delta, model) and refit")
+    elif recovery is None or not rec_bound:
+        prereq = (f"fake-data recovery: {binding['recovery']}", UNEVALUABLE,
+                  "run recovery against the current model")
+    elif recovery.get("passed") is not True:
+        prereq = ("fake-data recovery failed", AFFIRMATIVE,
+                  "the pipeline cannot recover known truth; fix before any claim")
+    elif sbc is None or not sbc_bound:
+        prereq = (f"SBC: {binding['sbc']}", UNEVALUABLE,
+                  "run SBC against the current model")
+    elif sbc.get("passed") is not True:
+        prereq = ("SBC failed", AFFIRMATIVE,
+                  "rank calibration or fit stability is broken; fix before any claim")
+    elif newfam is None or not newfam_bound:
+        prereq = (f"new-family simulated recovery: {binding['newfam']}",
+                  UNEVALUABLE, "run newfam_check against the current model")
+    elif newfam.get("passed") is not True:
+        prereq = ("new-family simulated recovery failed", AFFIRMATIVE,
+                  "the branch every new-family claim uses is miscalibrated")
+    elif ppc is None or not ppc_bound:
+        prereq = (f"PPC: {binding['ppc']}", UNEVALUABLE,
+                  "run the PPC against this posterior")
+    elif not ppc.get("passed"):
+        prereq = ("PPC failed (human or instrument arm)", AFFIRMATIVE,
+                  "the fitted model misfits the criterion data; revise the model")
+    elif inst_ppc is None or not inst_ppc.get("passed"):
+        prereq = ("instrument-arm posterior predictive check absent or failed",
+                  AFFIRMATIVE if inst_ppc else UNEVALUABLE,
+                  "the measurement model must fit before instrument claims")
 
-    # ---- ranking
+    vitiation = _refuse(
+        "contamination cap: item source not assessed clean; exposure to "
+        "published items can inflate the fitted slope and stable instrument "
+        "opinion exactly where this claim's statistic looks",
+        VITIATED,
+        "validate on a post-cutoff, unpublished item set with fresh norms")
+
+    def _declaration(cell: str | None) -> dict:
+        prov = "not recorded"
+        if cell:
+            for inst in instruments:
+                if inst["cell"] == cell:
+                    prov = inst.get("provenance", "not recorded")
+        return {
+            "bearer": cell or "instrument set",
+            "unit": "item (decontextualized sentence)",
+            "population": estimand.get("population"),
+            "range": {"families": domain["construction_families"],
+                      "item_source": domain.get("item_source", "see domain")},
+            "time_version": {"posterior_sha256": posterior_sha,
+                             "instrument_provenance": prov},
+        }
+
+    DEFEATERS = [
+        "contamination discovered for the item source (vitiates retroactively)",
+        "instrument version change (weights, digest, or serving stack)",
+        "item-pool or criterion-data change (hashes in run.json)",
+        "a failed re-validation or stronger contrary result (defeats)",
+        "optimization of prompts, models, or items against this certificate's "
+        "gate statistics (Goodhart erosion; vitiates the statistic)",
+    ]
+
+    def _grant(claim: str, cell: str | None, basis: str) -> None:
+        licensed[claim] = {
+            "basis": basis + f" [spec {spec['spec_version']}]",
+            "declaration": _declaration(cell),
+            "projectibility_profile": profiles.get(
+                claim,
+                "not stated by the analyst: without a stated profile (the "
+                "worldly pattern that would make this inference "
+                "non-accidental) the grant is evidence-only"),
+            "defeaters": DEFEATERS,
+        }
+
+    # ---- screening
+    g = spec["screening"]
+    candidates = {c: v for c, v in gate_stats.items() if c not in flagged_cells}
+    best = max(candidates.items(), key=lambda kv: kv[1]["median"]) if candidates else None
+    if prereq:
+        refused["screening"] = _refuse(*prereq)
+    elif not contamination_clean:
+        refused["screening"] = vitiation
+    elif best is None:
+        refused["screening"] = _refuse(
+            "no unflagged continuous cell carries the directional new-family "
+            "quantities", UNEVALUABLE, "fit at least one unflagged instrument cell")
+    elif (best[1]["p_pos"] >= g["p_pos_min"] and best[1]["median"] > g["rel_median_min"]
+          and best[1]["q10"] > g["rel_q10_min"]):
+        _grant("screening", best[0],
+               f"prerequisites passed; cell {best[0]}: P(new-family slope "
+               f"positive) {best[1]['p_pos']:.2f} >= {g['p_pos_min']}, "
+               f"directional reliability median {best[1]['median']:.2f} > "
+               f"{g['rel_median_min']}, q10 {best[1]['q10']:.2f} > {g['rel_q10_min']}")
+    else:
+        refused["screening"] = _refuse(
+            f"best unflagged cell {best[0]}: P(positive slope) "
+            f"{best[1]['p_pos']:.2f}, directional reliability median "
+            f"{best[1]['median']:.2f}, q10 {best[1]['q10']:.2f} (need >= "
+            f"{g['p_pos_min']}, > {g['rel_median_min']}, > {g['rel_q10_min']})",
+            SHORTFALL, "stronger instrument or more criterion data")
+
+    # ---- within-family ranking
+    g = spec["ranking_within_family"]
     all_fams = set(maps.get("constructions", []))
-    if "screening" not in licensed:
-        refused["ranking"] = "refused because screening is not granted"
+    if prereq:
+        refused["ranking_within_family"] = _refuse(*prereq)
     elif loco is None:
-        refused["ranking"] = "evidence not produced: loco.json missing"
-    elif not loco_ok:
-        refused["ranking"] = f"LOCO evidence not bound to this run: {loco_bind_reason}"
+        refused["ranking_within_family"] = _refuse(
+            "loco.json missing", UNEVALUABLE, "run LOCO for this run's inputs")
+    elif not loco_bound:
+        refused["ranking_within_family"] = _refuse(
+            f"LOCO not bound: {binding['loco']}", UNEVALUABLE,
+            "re-run LOCO against the current inputs")
     elif not loco.get("all_diagnostics_passed"):
-        refused["ranking"] = "one or more LOCO fold fits failed diagnostics"
+        refused["ranking_within_family"] = _refuse(
+            "one or more LOCO fold fits failed diagnostics", AFFIRMATIVE,
+            "raise fold iterations or fix the model, then re-run LOCO")
     elif set(loco.get("families_tested", [])) != all_fams:
         missing = sorted(all_fams - set(loco.get("families_tested", [])))
-        refused["ranking"] = f"LOCO did not cover every family (missing: {missing})"
+        refused["ranking_within_family"] = _refuse(
+            f"LOCO did not cover every family (missing: {missing})",
+            UNEVALUABLE, "run the missing folds")
     elif not contamination_clean:
-        refused["ranking"] = (
-            "contamination cap: item source not assessed clean; contamination "
-            "inflates the held-out rank statistic itself (LOCO rewards it)")
-    elif (loco.get("pooled_spearman") or -1) > 0.6 and \
-         (loco.get("pooled_spearman_cluster_boot_lower90") or -1) > 0.5:
-        licensed["ranking"] = (
-            f"pooled tie-aware held-out Spearman "
-            f"{loco['pooled_spearman']:.2f} > 0.6 with family-cluster "
-            f"bootstrap lower-90 {loco['pooled_spearman_cluster_boot_lower90']:.2f} > 0.5")
+        refused["ranking_within_family"] = vitiation
+    elif ((loco.get("mean_spearman") or -1) > g["mean_spearman_min"]
+          and (loco.get("frac_families_within_spearman_gt_0.3") or 0)
+          >= g["frac_families_gt_0p3_min"]):
+        _grant("ranking_within_family", None,
+               f"mean within-family held-out Spearman "
+               f"{loco['mean_spearman']:.2f} > {g['mean_spearman_min']} and "
+               f"{loco['frac_families_within_spearman_gt_0.3']:.0%} of "
+               f"families > 0.3 (min {loco.get('within_family_spearman_min')})")
     else:
-        refused["ranking"] = (
-            f"pooled held-out Spearman {loco.get('pooled_spearman')} "
-            f"(lower-90 {loco.get('pooled_spearman_cluster_boot_lower90')}) "
-            "does not clear (0.6, 0.5)")
+        refused["ranking_within_family"] = _refuse(
+            f"within-family transfer insufficient: mean Spearman "
+            f"{loco.get('mean_spearman')}, "
+            f"{(loco.get('frac_families_within_spearman_gt_0.3') or 0):.0%} "
+            f"of families > 0.3, min {loco.get('within_family_spearman_min')}",
+            SHORTFALL, "stronger instrument, more families, or more items per family")
 
-    # ---- aggregate estimation
+    # ---- family location for unanchored families: structurally refused
+    refused["family_location_unanchored"] = _refuse(
+        "absolute location of a family with no human anchor is "
+        "prior-identified, not likelihood-identified (delta-invariance "
+        "against per-cell family intercepts)",
+        STRUCTURAL, "collect human anchor items in each new family, or accept "
+        "within-family claims only")
+
+    # ---- aggregate estimation (independent of ranking; sharpness-aware)
+    g = spec["aggregate_estimation"]
     coverage = loco.get("mean_coverage90") if loco else None
-    if "ranking" not in licensed:
-        refused["aggregate_estimation"] = "refused because ranking is not granted"
-    elif ppc is None:
-        refused["aggregate_estimation"] = "evidence not produced: ppc.json missing (ladder step 4)"
-    elif not ppc_ok_bind:
-        refused["aggregate_estimation"] = f"PPC evidence not bound to this run: {ppc_bind_reason}"
-    elif not ppc.get("passed"):
-        refused["aggregate_estimation"] = (
-            "posterior predictive check failed; the human arm misfits the "
-            "criterion data, so aggregate predictions inherit unquantified bias")
-    elif coverage is None:
-        refused["aggregate_estimation"] = "loco.json carries no 90% interval coverage"
-    elif 0.75 <= coverage <= 0.98:
-        licensed["aggregate_estimation"] = (
-            f"LOCO 90% interval coverage {coverage:.2f} within [0.75, 0.98], "
-            "PPC passed in both participant modes, contamination assessed clean")
+    rmse = loco.get("mean_rmse") if loco else None
+    sd_obs = loco.get("sd_observed_item_means") if loco else None
+    lo_band, hi_band = g["coverage_band"]
+    if prereq:
+        refused["aggregate_estimation"] = _refuse(*prereq)
+    elif loco is None or not loco_bound or not loco.get("all_diagnostics_passed"):
+        refused["aggregate_estimation"] = _refuse(
+            "LOCO evidence missing, unbound, or diagnostics-failed",
+            UNEVALUABLE, "produce clean, bound LOCO evidence")
+    elif not contamination_clean:
+        refused["aggregate_estimation"] = vitiation
+    elif coverage is None or rmse is None or sd_obs is None:
+        refused["aggregate_estimation"] = _refuse(
+            "LOCO carries no coverage/RMSE/spread for the sharpness-aware gate",
+            UNEVALUABLE, "re-run LOCO with the current report schema")
+    elif lo_band <= coverage <= hi_band and rmse <= g["rmse_max_frac_of_observed_sd"] * sd_obs:
+        _grant("aggregate_estimation", None,
+               f"coverage {coverage:.2f} in [{lo_band}, {hi_band}] and RMSE "
+               f"{rmse:.2f} <= {g['rmse_max_frac_of_observed_sd']} x "
+               f"sd(observed item means) = "
+               f"{g['rmse_max_frac_of_observed_sd'] * sd_obs:.2f}; "
+               "within-family interpretation only")
     else:
-        refused["aggregate_estimation"] = (
-            f"LOCO 90% interval coverage {coverage:.2f} outside [0.75, 0.98]")
+        refused["aggregate_estimation"] = _refuse(
+            f"coverage {coverage:.2f} (need [{lo_band}, {hi_band}]) with RMSE "
+            f"{rmse:.2f} vs sharpness bound "
+            f"{g['rmse_max_frac_of_observed_sd'] * sd_obs:.2f}: wide-interval "
+            "coverage without accuracy does not license aggregate use",
+            SHORTFALL, "sharper instrument or more criterion data")
 
-    refused["effect_reproduction"] = ("not yet tested: requires matched "
-                                      "experimental contrasts")
-    refused["distributional_claims"] = (
+    refused["effect_reproduction"] = _refuse(
+        "not yet tested: requires matched experimental contrasts",
+        UNEVALUABLE, "add a matched-contrast validation stage (v2)")
+    refused["distributional_claims"] = _refuse(
         "no participant-level validation of variance structure"
         + ("" if ppc is None or ppc.get("passed")
-           else "; posterior predictive check failed"))
-    refused["population_transfer"] = (
-        "refused: the v1 ladder contains no population-transfer test; the "
-        "estimand population defaults to the criterion sample's own")
-    refused["individual_simulation"] = ("refused permanently: an item-level "
-                                        "instrument licenses no individual-level "
-                                        "human simulation")
-    refused["mechanism_claims"] = ("refused permanently: the model estimates a "
-                                   "linking function, not a mechanism")
+           else "; posterior predictive checks failed"),
+        UNEVALUABLE if ppc is None or ppc.get("passed") else AFFIRMATIVE,
+        "model and validate rater heterogeneity (v2)")
+    refused["population_transfer"] = _refuse(
+        "the v1 ladder contains no population-transfer test; the estimand "
+        "population defaults to the criterion sample's own",
+        UNEVALUABLE, "add stratified human anchors from the target population (v2)")
+    refused["individual_simulation"] = _refuse(
+        "an item-level instrument licenses no individual-level human simulation",
+        STRUCTURAL, "none: outside this design's claim space")
+    refused["mechanism_claims"] = _refuse(
+        "the model estimates a linking function, not a mechanism",
+        STRUCTURAL, "none: outside this design's claim space")
+
+    # ---- descriptive findings: always emitted, never a license
+    descriptive = {
+        "note": ("in-source descriptive associations on this item set; not "
+                 "deployment evidence"),
+        "pooled_heldout_spearman": (loco or {}).get("pooled_spearman_descriptive"),
+        "between_family_spearman": (loco or {}).get("between_family_spearman"),
+        "per_family_within_spearman": {
+            f: v.get("spearman") for f, v in ((loco or {}).get("per_family") or {}).items()
+        } or "no LOCO evidence",
+        "human_split_half": split_half,
+        "response_style": (response_style if response_style is not None
+                           else "not assessed (no response_style.json)"),
+    }
+
+    # ---- the licence life-cycle block (ai-evaluation-kinds)
+    licence = {
+        "status": "issued" if licensed else "descriptive_only",
+        "issued_by": issued_by,
+        "issued": datetime.date.today().isoformat(),
+        "threshold_spec": spec_identity(),
+        "expiry_conditions": [
+            "any instrument version change (checkpoint commit, digest, or "
+            "serving stack) relative to the recorded provenance",
+            "any change to the item pool, criterion data, or measurements "
+            "(hashes in run.json)",
+            "any change to the Stan model (stan_sha256)",
+        ],
+        "erosion_conditions": [
+            "selecting prompts, models, or items against this certificate's "
+            "gate statistics vitiates those statistics (Goodhart)",
+            "repeated selective re-running until a gate passes",
+        ],
+        "defeat_and_supersession": (
+            "a later certificate built for this run_dir supersedes this one; "
+            "a failed re-validation defeats all outstanding grants"),
+        "contestation": (
+            "re-run scripts/pilot.py and rebuild the warrant, or submit the "
+            "current validation packet (reviews/) to an independent reviewer; "
+            "disagreement with a gate is a spec revision, not an edit"),
+    }
 
     cert = _plain({
         "generated": datetime.datetime.now().isoformat(timespec="seconds"),
         "run_dir": str(run_dir),
         "run_id": (run or {}).get("run_id", "not recorded"),
-        "posterior_sha256": (run or {}).get("posterior_sha256", "not recorded"),
+        "posterior_sha256_recomputed": posterior_sha,
+        "stan_sha256_recomputed": stan_sha,
+        "licence": licence,
         "estimand": estimand,
         "domain": domain,
         "instruments": instruments,
         "evidence": evidence,
         "licensed_claims": licensed,
         "refused_claims": refused,
+        "descriptive_findings": descriptive,
         "residual_risks": [
+            "binding integrity is not construct validity: a pristine, fully "
+            "bound record can still document the wrong predicate; hash checks "
+            "discharge staleness, not meaning",
             "shared pretraining bias: local instruments share web-scale "
             "training data and can share construction-specific error; a tight "
             "multiverse fan does not rule this out",
-            "reliability quantities are fit- and item-set-specific; they go "
-            "stale when the item pool changes",
+            "reliability quantities are fit- and item-set-specific and "
+            "conditional on a family-exchangeability extrapolation model",
             "thresholds are pre-registered defaults, not estimand-specific "
             "loss analyses",
+            "prompt-level dependence within pooled paraphrase cells is not "
+            "yet modeled (nested prompt effects are v2)",
         ],
     })
 
     out_path = Path(out_path) if out_path else run_dir / "warrant.yaml"
     out_path.write_text(yaml.safe_dump(cert, sort_keys=False, allow_unicode=True))
     return cert
-
-```
-
-
----
-
-## FILE: src/acceptometer/elicit/hf_logprob.py
-
-```
-"""Exact sentence log-probability cells from local Hugging Face models."""
-
-from __future__ import annotations
-
-import math
-import string
-from datetime import datetime, timezone
-
-from ..items import Item
-from .base import CONTINUOUS, CellSpec, Measurement
-
-
-class HFLogprobScorer:
-    """Score causal-LM token probabilities in padded batches."""
-
-    def __init__(
-        self,
-        model_id: str = "EleutherAI/pythia-160m",
-        device: str | None = None,
-    ) -> None:
-        try:
-            import torch
-            import transformers
-        except ImportError as exc:  # pragma: no cover - depends on optional extra
-            raise RuntimeError(
-                "HFLogprobScorer requires the 'hf' optional dependencies"
-            ) from exc
-
-        self._torch = torch
-        self._transformers = transformers
-        self.model_id = model_id
-        self.model_name = model_id.rsplit("/", 1)[-1]
-        mps = getattr(torch.backends, "mps", None)
-        self.device = str(
-            device or ("mps" if mps is not None and mps.is_available() else "cpu")
-        )
-        self.tokenizer = transformers.AutoTokenizer.from_pretrained(model_id)
-        self.model = transformers.AutoModelForCausalLM.from_pretrained(model_id)
-        self.model.to(self.device)
-        self.model.eval()
-        model_revision = getattr(self.model.config, "_name_or_path", model_id)
-        commit = getattr(self.model.config, "_commit_hash", None) or "unknown"
-        self.revision = (f"{model_revision}; commit={commit}; "
-                         f"transformers={transformers.__version__}")
-
-    def cells(self) -> list[CellSpec]:
-        """Return the three deterministic log-probability cells."""
-        model = f"hf:{self.model_id}"
-        return [
-            CellSpec(
-                cell_id=f"{self.model_name}/{method}",
-                model=model,
-                method=method,
-                kind=CONTINUOUS,
-                params={"deterministic": True},
-            )
-            for method in ("logprob_sum", "logprob_mean", "slor")
-        ]
-
-    def score(
-        self,
-        items: list[Item],
-        cell: CellSpec,
-        repeats: int = 1,
-    ) -> list[Measurement]:
-        """Score one cell; deterministic cells ignore requested repeats."""
-        if cell.method not in {"logprob_sum", "logprob_mean", "slor"}:
-            raise ValueError(f"unsupported HF log-probability cell: {cell.cell_id}")
-
-        now = datetime.now(timezone.utc).isoformat()
-        rows = self._sentence_scores(items)
-        out = []
-        for item, row in zip(items, rows, strict=True):
-            meta = {
-                "model_id": self.model_id,
-                "revision": self.revision,
-                "device": self.device,
-                "date": now,
-                "n_scored_tokens": row["n_tokens"],
-                "first_token_skipped": row["first_token_skipped"],
-            }
-            if cell.method == "slor":
-                meta["unigram_source"] = "wordfreq-zipf"
-                meta["slor_definition"] = "(subword_logprob_sum - word_unigram_sum) / n_words"
-            out.append(
-                Measurement(
-                    item_id=item.item_id,
-                    cell_id=cell.cell_id,
-                    kind=CONTINUOUS,
-                    value=float(row[cell.method]),
-                    meta=meta,
-                )
-            )
-        return out
-
-    def _sentence_scores(self, items: list[Item]) -> list[dict[str, float | int | bool]]:
-        bos_id = self.tokenizer.bos_token_id
-        encoded = [
-            self.tokenizer.encode(item.text, add_special_tokens=False) for item in items
-        ]
-        results: list[dict[str, float | int | bool]] = []
-
-        for start in range(0, len(items), 16):
-            batch_ids = encoded[start : start + 16]
-            sequences = [([bos_id] + ids if bos_id is not None else ids) for ids in batch_ids]
-            batch_sums = self._batch_logprob_sums(sequences)
-            for item, token_ids, logprob_sum in zip(
-                items[start : start + 16], batch_ids, batch_sums, strict=True
-            ):
-                n_tokens = len(token_ids) if bos_id is not None else max(len(token_ids) - 1, 0)
-                # slor is a hybrid quantity here: subword model logprob minus a
-                # word-level (wordfreq) unigram sum, normalized per WORD so the
-                # two sums share a unit; when the first model token is unscored
-                # (no BOS) the first word's unigram term is skipped to match
-                unigram_sum, n_words = self._unigram_logprob_sum(
-                    item, skip_first=bos_id is None)
-                results.append(
-                    {
-                        "logprob_sum": logprob_sum,
-                        "logprob_mean": logprob_sum / n_tokens if n_tokens else math.nan,
-                        "slor": (
-                            (logprob_sum - unigram_sum) / n_words
-                            if n_tokens and n_words
-                            else math.nan
-                        ),
-                        "n_tokens": n_tokens,
-                        "n_words": n_words,
-                        "first_token_skipped": bos_id is None,
-                    }
-                )
-        return results
-
-    def _batch_logprob_sums(self, sequences: list[list[int]]) -> list[float]:
-        if not sequences:
-            return []
-        torch = self._torch
-        pad_id = self.tokenizer.pad_token_id
-        if pad_id is None:
-            pad_id = self.tokenizer.eos_token_id
-        if pad_id is None:
-            pad_id = self.tokenizer.bos_token_id
-        if pad_id is None:
-            pad_id = 0
-        width = max(max((len(sequence) for sequence in sequences), default=0), 1)
-        input_ids = torch.full(
-            (len(sequences), width), pad_id, dtype=torch.long, device=self.device
-        )
-        attention_mask = torch.zeros(
-            (len(sequences), width), dtype=torch.long, device=self.device
-        )
-        for row, sequence in enumerate(sequences):
-            if sequence:
-                input_ids[row, : len(sequence)] = torch.tensor(
-                    sequence, dtype=torch.long, device=self.device
-                )
-                attention_mask[row, : len(sequence)] = 1
-
-        with torch.no_grad():
-            logits = self.model(
-                input_ids=input_ids, attention_mask=attention_mask
-            ).logits
-            log_probs = logits.log_softmax(dim=-1)
-
-        sums = []
-        for row, sequence in enumerate(sequences):
-            total = 0.0
-            for position in range(1, len(sequence)):
-                total += log_probs[
-                    row, position - 1, sequence[position]
-                ].item()
-            sums.append(total)
-        return sums
-
-    @staticmethod
-    def _unigram_logprob_sum(item: Item, skip_first: bool = False) -> tuple[float, int]:
-        from wordfreq import zipf_frequency
-
-        total, n = 0.0, 0
-        first = True
-        for raw_word in item.text.split():
-            word = raw_word.strip(string.punctuation).lower()
-            if not word:
-                continue
-            if first and skip_first:
-                first = False
-                continue
-            first = False
-            zipf = max(float(zipf_frequency(word, item.language)), 1.0)
-            total += (zipf - 9.0) * math.log(10.0)
-            n += 1
-        return total, n
 
 ```
 
@@ -2205,14 +2498,16 @@ class HFLogprobScorer:
 
 Usage: uv run python scripts/pilot.py [--skip-loco]
 
-Reads data/pilot_items.jsonl, data/pilot_human.csv, and the cached
-measurements in runs/pilot/measurements.jsonl; refits; runs recovery, PPC,
-and LOCO; leaves every warrant prerequisite in runs/pilot/.
+Every warrant prerequisite is produced (or verified) here, and the script
+STOPS at the first failed gate rather than proceeding to later stages: a
+partially-run directory must not look like a validated one. --skip-loco
+deletes any stale loco.json for the same reason.
 """
 
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -2223,8 +2518,10 @@ import pandas as pd
 from acceptometer.items import load_items, nuisance_covariates
 from acceptometer.elicit.base import load_measurements, CONTINUOUS
 from acceptometer.model.fit import (build_stan_data, fit_model, diagnostics_gate,
-                                    save_fit, sha256_file)
-from acceptometer.model.simulate import simulate, recovery_check, write_report
+                                    save_fit, sha256_file, STAN_FILE)
+from acceptometer.model.simulate import (simulate, recovery_check, write_report,
+                                         newfam_check)
+from acceptometer.model.sbc import sbc_run
 from acceptometer.model.ppc import ppc_human
 from acceptometer.model.loco import loco
 
@@ -2239,6 +2536,31 @@ def fit_cells(df: pd.DataFrame) -> pd.DataFrame:
                 | cont.cell_id.str.startswith("qwen3:8b/prompt_scalar")]
     cont["cell_id"] = cont.cell_id.str.replace(r"/p\d$", "", regex=True)
     return cont[["item_id", "cell_id", "value"]]
+
+
+def write_provenance(ms, out: Path) -> None:
+    """Collapse measurement metadata into per-fitted-cell provenance so the
+    certificate can name the model installation it certifies."""
+    prov: dict = {}
+    for m in ms:
+        cell = m.cell_id
+        cell = cell.rsplit("/p", 1)[0] if "/prompt_" in cell else cell
+        entry = prov.setdefault(cell, {"revisions": set(), "digests": set(),
+                                       "dates": set()})
+        if m.meta.get("revision"):
+            entry["revisions"].add(m.meta["revision"])
+        if m.meta.get("model_digest"):
+            entry["digests"].add(str(m.meta["model_digest"])[:200])
+        if m.meta.get("date"):
+            entry["dates"].add(m.meta["date"][:10])
+    out.write_text(json.dumps(
+        {c: {k: sorted(v) for k, v in e.items()} for c, e in prov.items()},
+        indent=2))
+
+
+def fail(stage: str) -> int:
+    print(f"STOP: {stage} failed; later stages not run")
+    return 1
 
 
 def main() -> int:
@@ -2258,14 +2580,36 @@ def main() -> int:
         "human": sha256_file("data/pilot_human.csv"),
         "measurements": sha256_file(RUN / "measurements.jsonl"),
     }
+    write_provenance(ms, RUN / "instruments.json")
 
     # ladder step 1: fake-data recovery against the CURRENT model
     sdata, truth = simulate()
     sfit, sidata = fit_model(sdata, seed=7)
     srec = recovery_check(sidata, truth)
     srec["diagnostics"] = diagnostics_gate(sfit, sidata)
+    srec["stan_sha256"] = sha256_file(STAN_FILE)
     write_report(srec, RUN / "recovery.json")
     print("recovery passed:", srec["passed"])
+    if not srec["passed"]:
+        return fail("recovery")
+
+    # ladder step 2: SBC (reuse a current run only if it matches this model)
+    sbc_path = RUN / "sbc.json"
+    sbc = json.loads(sbc_path.read_text()) if sbc_path.exists() else None
+    if not (sbc and sbc.get("stan_sha256") == srec["stan_sha256"]):
+        print("running SBC (no current-model report found)...")
+        sbc = sbc_run(R=100, seed=17, out_path=sbc_path)
+    print("SBC passed:", sbc["passed"], "| failed fits:",
+          sbc.get("n_failed_fits"), "+", sbc.get("n_diag_failed"), "diag")
+    if not sbc["passed"]:
+        return fail("SBC")
+
+    # ladder step 2b: simulated new-family recovery (the branch the warrant uses)
+    nf = newfam_check(iter_warmup=2000, iter_sampling=2000)
+    (RUN / "newfam.json").write_text(json.dumps(nf, indent=2))
+    print("new-family recovery passed:", nf["passed"])
+    if not nf["passed"]:
+        return fail("new-family recovery")
 
     # real fit
     data, maps = build_stan_data(items, X, human, cont, None, K=7)
@@ -2274,23 +2618,280 @@ def main() -> int:
     save_fit(idata, maps, diag, RUN, data=data, input_hashes=input_hashes)
     cont.to_csv(RUN / "cont.csv", index=False)
     print("fit diag:", json.dumps(diag))
+    if not diag["passed"]:
+        return fail("fit diagnostics")
+
+    # auditability: auxiliary posterior summaries the report quotes
+    post = idata.posterior
+    hm = human.groupby("item_id").rating.mean()
+    q = cont[cont.cell_id == "qwen3:8b/prompt_scalar"].groupby("item_id").value.mean()
+    common = q.index.intersection(hm.index)
+    summary = {
+        "tau_item_median": round(float(post.tau_item.median()), 3),
+        "omega_median_by_cell": {
+            c: round(float(post.omega.median(dim=("chain", "draw")).values[j]), 3)
+            for j, c in enumerate(maps["cont_cells"])},
+        "qwen_pooled_scalar_item_mean_r_with_human": round(
+            float(np.corrcoef(q[common], hm[common])[0, 1]), 3),
+        "posterior_sha256": json.loads((RUN / "run.json").read_text())["posterior_sha256"],
+    }
+    (RUN / "posterior_summary.json").write_text(json.dumps(summary, indent=2))
 
     run = json.loads((RUN / "run.json").read_text())
     rep = ppc_human(idata, maps, human, items, out_path=RUN / "ppc.json",
                     cont=cont, posterior_sha256=run["posterior_sha256"])
     print("PPC passed:", rep["passed"],
           "| marginal:", rep["marginal"]["passed"],
-          "| conditional:", rep["conditional"]["passed"])
+          "| conditional:", rep["conditional"]["passed"],
+          "| instrument:", rep.get("instrument_ppc", {}).get("passed"))
+    if not rep["passed"]:
+        return fail("PPC")
 
-    if not args.skip_loco:
-        # held-out-family geometry mixes slowly; 2000/2000 keeps fold fits
-        # inside the production diagnostics gate
-        lrep = loco(items, X, human, cont, None, K=7,
-                    iter_warmup=2000, iter_sampling=2000,
-                    out_path=RUN / "loco.json", input_hashes=input_hashes)
-        print("LOCO:", json.dumps({k: v for k, v in lrep.items()
-                                   if k not in ("per_family",)}))
-    return 0 if diag["passed"] else 1
+    if args.skip_loco:
+        stale = RUN / "loco.json"
+        if stale.exists():
+            stale.unlink()
+            print("removed stale loco.json (--skip-loco)")
+        return 0
+
+    # held-out-family geometry mixes slowly; 2000/2000 keeps fold fits
+    # inside the production diagnostics gate
+    lrep = loco(items, X, human, cont, None, K=7,
+                iter_warmup=2000, iter_sampling=2000,
+                out_path=RUN / "loco.json", input_hashes=input_hashes)
+    print("LOCO:", json.dumps({k: v for k, v in lrep.items()
+                               if k not in ("per_family", "input_hashes")}))
+    return 0 if lrep["all_diagnostics_passed"] else fail("LOCO fold diagnostics")
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+```
+
+
+---
+
+## FILE: scripts/agy_judge.py
+
+```
+"""Batched acceptability judgments from Claude Opus 4.6 via the agy CLI.
+
+The agy quota is account-wide with multi-day resets, so this instrument uses
+a BATCHED protocol: 20 numbered sentences per call, strict-JSON ratings, 3
+passes with per-pass shuffling (so batch context varies across repeats).
+Batching is a protocol difference from the single-item Ollama cells and is
+recorded in the cell id and metadata: the protocol is part of the instrument.
+
+Writes into runs/multi/measurements.jsonl with (item, cell, repeat) dedup.
+Unparseable chunks are retried once, then recorded as failures; no values are
+ever fabricated.
+"""
+
+import json
+import re
+import subprocess
+import sys
+import time
+from dataclasses import asdict
+from datetime import datetime, timezone
+from hashlib import sha256
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import numpy as np
+
+from acceptometer.items import load_items
+from acceptometer.elicit.base import CONTINUOUS, Measurement, load_measurements
+
+MODEL = "Claude Opus 4.6 (Thinking)"
+CELL = "claude-opus-4.6-agy/prompt_scalar_batch20"
+OUT = Path("runs/multi/measurements.jsonl")
+BATCH = 20
+REPEATS = 3
+
+PROMPT = """You are rating English sentences for acceptability to a native speaker, \
+on a scale from 1 (completely unacceptable) to 7 (completely natural). Rate each \
+sentence independently.
+
+Reply with ONLY a JSON object mapping each sentence number to an integer rating, \
+like {{"1": 5, "2": 2}}. No other text.
+
+Sentences:
+{sentences}"""
+
+
+def call_agy(prompt: str) -> str:
+    r = subprocess.run(
+        ["agy", "--model", MODEL, "--dangerously-skip-permissions", "-p", prompt],
+        capture_output=True, text=True, timeout=420)
+    return r.stdout + "\n" + r.stderr
+
+
+def parse_ratings(text: str, n: int) -> dict | None:
+    for m in reversed(re.findall(r"\{[^{}]+\}", text, flags=re.S)):
+        try:
+            d = json.loads(m)
+        except json.JSONDecodeError:
+            continue
+        out = {}
+        for k, v in d.items():
+            try:
+                k, v = int(k), int(v)
+            except (TypeError, ValueError):
+                continue
+            if 1 <= k <= n and 1 <= v <= 7:
+                out[k] = float(v)
+        if out:
+            return out
+    return None
+
+
+def main() -> int:
+    items = load_items("data/pilot_items.jsonl")
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    have = set()
+    if OUT.exists():
+        for m in load_measurements(OUT):
+            have.add((m.item_id, m.cell_id, m.repeat))
+
+    now = datetime.now(timezone.utc).isoformat()
+    prompt_sha = sha256(PROMPT.encode()).hexdigest()[:16]
+    n_ok, failures = 0, []
+    for rep in range(REPEATS):
+        order = np.random.default_rng(rep).permutation(len(items))
+        chunks = [order[i:i + BATCH] for i in range(0, len(order), BATCH)]
+        for ci, chunk in enumerate(chunks):
+            todo = [items[j] for j in chunk
+                    if (items[j].item_id, CELL, rep) not in have]
+            if not todo:
+                continue
+            listing = "\n".join(f"{k + 1}. {it.text}" for k, it in enumerate(todo))
+            prompt = PROMPT.format(sentences=listing)
+            ratings = None
+            for attempt in range(2):
+                try:
+                    raw = call_agy(prompt)
+                except subprocess.TimeoutExpired:
+                    raw = ""
+                ratings = parse_ratings(raw, len(todo))
+                if ratings:
+                    break
+            if not ratings:
+                failures.append({"repeat": rep, "chunk": ci, "n": len(todo)})
+                print(f"rep {rep} chunk {ci}: PARSE FAILURE", flush=True)
+                continue
+            ms = []
+            for k, it in enumerate(todo):
+                if (k + 1) in ratings:
+                    ms.append(Measurement(
+                        item_id=it.item_id, cell_id=CELL, kind=CONTINUOUS,
+                        value=ratings[k + 1], repeat=rep,
+                        meta={"provider": "antigravity/agy", "model": MODEL,
+                              "batch_size": BATCH, "protocol": "batched",
+                              "prompt_sha": prompt_sha, "date": now}))
+            with open(OUT, "a", encoding="utf-8") as fh:
+                for m in ms:
+                    fh.write(json.dumps(asdict(m), ensure_ascii=False) + "\n")
+            n_ok += len(ms)
+            print(f"rep {rep} chunk {ci}: {len(ms)}/{len(todo)} ratings",
+                  flush=True)
+            time.sleep(2)
+    print(f"TOTAL: {n_ok} measurements, {len(failures)} failed chunks")
+    return 0 if not failures else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
+
+```
+
+
+---
+
+## FILE: scripts/response_evidence.py
+
+```
+"""Response-style and marginal-stratum evidence (adversarial-pragmatics
+lessons applied to acceptability).
+
+Two failure modes that aggregate correlations conceal:
+
+- MARGINAL-STRATUM performance: the contested middle band of items (human
+  mean in [3, 5] on a 7-point scale) is where theoretical decisions live and
+  where restriction-of-range inflation does not reach. Per-cell correlations
+  are reported inside and outside the band.
+- CATEGORY OMISSION: an instrument can reach an aggregate advantage partly by
+  never emitting certain response categories (the adversarial-pragmatics
+  judge study's label-omission finding). Human vs instrument category usage
+  is compared directly for prompted scalar cells.
+
+Writes runs/pilot/response_style.json; the warrant surfaces it under
+descriptive_findings.
+"""
+
+import json
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
+
+import numpy as np
+import pandas as pd
+
+from acceptometer.elicit.base import load_measurements, CONTINUOUS
+
+RUN = Path("runs/pilot")
+
+
+def main() -> int:
+    human = pd.read_csv("data/pilot_human.csv")
+    hm = human.groupby("item_id").rating.mean()
+    ms = load_measurements(RUN / "measurements.jsonl")
+    multi = Path("runs/multi/measurements.jsonl")
+    if multi.exists():
+        ms += load_measurements(multi)
+    df = pd.DataFrame([{"item_id": m.item_id, "cell_id": m.cell_id,
+                        "kind": m.kind, "value": m.value} for m in ms])
+
+    out: dict = {"marginal_band": [3.0, 5.0], "cells": {}}
+    cont = df[df.kind == CONTINUOUS].copy()
+    cont["cell_id"] = cont.cell_id.str.replace(r"/p\d$", "", regex=True)
+    for cell, grp in cont.groupby("cell_id"):
+        v = grp.groupby("item_id").value.mean()
+        common = v.index.intersection(hm.index)
+        h = hm[common]
+        v = v[common]
+        marg = (h >= 3.0) & (h <= 5.0)
+        entry = {"n_items": int(len(common)),
+                 "r_all": round(float(np.corrcoef(v, h)[0, 1]), 3)}
+        for label, mask in (("r_marginal_band", marg), ("r_outside_band", ~marg)):
+            if mask.sum() >= 5 and h[mask].std() > 0 and v[mask].std() > 0:
+                entry[label] = round(float(np.corrcoef(v[mask], h[mask])[0, 1]), 3)
+                entry[label + "_n"] = int(mask.sum())
+            else:
+                entry[label] = "not computable (too few items or no variance)"
+        out["cells"][cell] = entry
+
+    # category usage: human vs prompted scalar (raw 1-7 draws, all repeats)
+    hu_usage = (human.rating.value_counts(normalize=True)
+                .reindex(range(1, 8), fill_value=0.0))
+    out["category_usage"] = {
+        "human": {str(k): round(float(p), 3) for k, p in hu_usage.items()}}
+    scal = df[df.cell_id.str.contains("prompt_scalar")]  # includes batch cells
+    for cell, grp in scal.groupby(scal.cell_id.str.replace(r"/p\d$", "", regex=True)):
+        usage = (grp.value.astype(int).value_counts(normalize=True)
+                 .reindex(range(1, 8), fill_value=0.0))
+        omitted = [k for k, p in usage.items() if p == 0.0]
+        out["category_usage"][cell] = {
+            "usage": {str(k): round(float(p), 3) for k, p in usage.items()},
+            "categories_never_emitted": omitted or "none",
+        }
+
+    (RUN / "response_style.json").write_text(json.dumps(out, indent=2) + "\n")
+    print(json.dumps(out, indent=1))
+    return 0
 
 
 if __name__ == "__main__":
@@ -2304,138 +2905,850 @@ if __name__ == "__main__":
 ## FILE: PILOT-REPORT.md
 
 ```
-# Acceptometer pilot report: Sprouse LI items, local instruments
-<!-- SUMMARY: Real-data pilot of the warranted measurement pipeline after two external reviews; screening licensed, ranking refused on the contamination cap despite passing numbers · status: complete · updated: 2026-08-27 -->
+# Acceptometer pilot report: Sprouse LI items, six judge models
+<!-- SUMMARY: Final pilot: certificate descriptive_only (contamination + rater-entropy PPC), cross-model contested-band deficit measured across five families incl. Opus 4.6 · status: complete · updated: 2026-08-27 -->
 
 ## What ran
 
-120 items from the Sprouse, Schütze & Almeida (2013) Linguistic Inquiry
-judgment study (10 source-paper families, 6 starred / 6 good each), with all
-1,519 available participant-level 7-point ratings (304 participants, ~12.7
-ratings/item). Instruments, all local and free: Pythia-160m exact
-log-probability cells (SLOR entering the fit, unit-consistent per-word
-definition) and qwen3:8b prompted judgments (3 registered paraphrases x binary
-and 1-7 scalar x 3 repeats at temperature 0.7; 2,160 chat calls, zero parse
-failures, 11.5 minutes). One instrument per model+method enters the fit;
-paraphrases and repeats are repeated measurements.
+120 items from Sprouse, Schütze & Almeida (2013) (10 source-paper families,
+6 starred / 6 good each) with all 1,519 participant-level 7-point ratings
+(304 participants). Judges: Pythia-160m (exact log-probabilities), qwen3:8b,
+gemma3:12b, mistral-small:24b (local, single-item protocol, 3 paraphrases x 3
+repeats), and Claude Opus 4.6 via agy (batched-20 protocol, 3 passes, 18
+calls, 0 parse failures); glm-4.7-flash and qwen3.8:27b in flight. The joint
+Bayesian fit uses qwen3:8b + Pythia SLOR; the others are descriptive cells.
 
-Every stage ran behind its gate, and the warrant enforces the ladder
-literally: convergence diagnostics, fake-data recovery (including the freed
-scale and family-deviation hyperparameters), SBC (R=100, diagnostics-aware),
-posterior predictive checks in BOTH participant modes with per-family gates,
-and leave-one-construction-family-out transfer in which the held-out family
-is excluded from the training sum-to-zero vector and receives an independent
-predictive family effect. All evidence is hash-bound to the posterior it
-certifies.
+The full ladder ran gated, stop-at-first-failure: fake-data recovery PASSED;
+SBC (R=100, 4-chain, diagnostics-aware, failures excluded from ranks) PASSED;
+simulated new-family recovery PASSED (within-family coverage .83, rank
+recovery +.84/+.85, family-location bias reported as the empirical face of
+the prior-identification limit); fit diagnostics PASSED; posterior predictive
+checks FAILED on exactly one discrepancy: participant-level category-usage
+entropy (ppp .000/.006), the rater-style misfit review 3 predicted, caught by
+the check built for it. LOCO ran under the current model (held-out families
+outside the sum-to-zero vector): mean within-family Spearman .687, 90%
+coverage .926, between-family Spearman .41, fox still failing outright
+(-.03), one fold marginal (R-hat 1.013).
 
-## Headline numbers
+## The certificate (runs/pilot/warrant.yaml)
 
-| Quantity | Value |
-|---|---|
-| Human split-half reliability (item means, 200 splits) | r = .857 (Spearman-Brown .923) |
-| qwen3:8b pooled scalar, item-mean r with humans | .724 |
-| qwen3:8b new-family predictive reliability | .54 [80%: .39, .65]; by-family .50-.58 |
-| Pythia-160m SLOR new-family predictive reliability | .36 [80%: .04, .68]; by-family .09-.57 |
-| qwen instrument-by-item error (omega) | ~.56 latent-logit units |
-| PPC (conditional and marginal modes) | both passed |
-| LOCO pooled tie-aware Spearman (same raters, new items) | .742; family-cluster bootstrap lower-90 .654 |
-| LOCO mean 90% coverage of observed means | .933; RMSE .99 |
-| LOCO fold diagnostics | 10/10 clean at 2000/2000 iterations |
+**Licence status: `descriptive_only`.** All six evidence artifacts recompute-
+hash-bound. Every deployment claim refused, typed, with a remedy:
 
-Per-family LOCO is the projectibility story: nine of ten families transfer at
-Spearman .55-.95; one (34.1.fox) fails outright (-.03). Pythia's per-family
-reliability spread (.09-.57) shows an instrument whose validity does not
-project across families; qwen's (.50-.58) is family-stable on this domain.
+| claim | type | remedy |
+|---|---|---|
+| screening | affirmative_failure (PPC) | model rater-style heterogeneity; then the contamination cap still requires post-cutoff items |
+| ranking_within_family | affirmative_failure (PPC) | same |
+| aggregate_estimation | affirmative_failure (PPC) | same |
+| family_location_unanchored | structural | anchor items per new family, or within-family claims only |
+| effect_reproduction, population_transfer | unevaluable | build the v2 tests |
+| distributional_claims | affirmative_failure | rater-style modeling (v2) |
+| individual_simulation, mechanism_claims | structural | none: outside the design's claim space |
 
-## The warrant (runs/pilot/warrant.yaml)
+The certificate carries the licence life-cycle (expiry on instrument/item/
+model change; Goodhart-erosion clause; defeat and supersession; contestation
+route), the analyst's projectibility profiles as stated hypotheses, and the
+frozen threshold spec v1.0.0 by hash.
 
-Licensed: **screening only** — the full ladder passed and qwen's new-family
-predictive reliability clears (median .54 > .5, q10 .39 > .35).
+## The headline scientific finding: the contested-band deficit
 
-Refused: **ranking, on the contamination cap, despite passing numbers.** The
-pooled held-out Spearman (.742, lower-90 .654) would clear the pre-registered
-gate, but the LI materials are public since 2013 and contamination inflates
-exactly the held-out rank statistic (LOCO rewards it), so a suspect item
-source cannot license ranking. Also refused with reasons: aggregate
-estimation (hierarchically), effect reproduction, distributional claims,
-population transfer, individual simulation (permanent), mechanism claims
-(permanent). Residual risks recorded: shared pretraining bias; item-set
-specificity; thresholds are pre-registered defaults, not loss analyses.
+Correlations of judge item-means with human item-means, split at the
+contested band (human mean in [3, 5]; 47 of 120 items):
 
-Lifting the cap is a v2 experiment, not a rule change: a post-cutoff,
-never-published item set with fresh human norms.
+| judge | r all | r band | r outside |
+|---|---|---|---|
+| Claude Opus 4.6 (batched) | **.834** | **.397** | .935 |
+| mistral-small 24B | .79 | .24 | .87 |
+| gemma3 12B | .74 | .28 | .85 |
+| qwen3 8B | .72 | .18 | .85 |
+| Pythia-160m SLOR | .35 | -.18 | .51 |
+| *human split-half ceiling* | *.857* | | |
 
-## What external review and real data changed (all logged in DECISIONS.md)
+Aggregate performance rises with capability to ceiling-adjacent (Opus .834
+vs .857), and the band lags everywhere: the frontier model carries less than
+half its outside-band signal in the region where acceptability theory
+actually needs judgment. Opus also avoids the middle category harder than
+humans do (uses "4" 5% vs 13.5%) while hitting the extremes. The deficit is
+class-wide and scale-mitigated, not solved. Published aggregate correlations
+(r~.8) are real and are carried by the items nobody needed an instrument for.
 
-Review 1 (glm-5.3-flash, adversarial, pre-data): family-varying linking,
-noise floor, conditional-reliability relabel, single-temperature elicitation,
-observed-mean LOCO target, contamination caps, PPC gate.
+Consequent use profile: triage. Screen the clear cases, spend the human
+budget on the middle band (which is what design.py allocates); no marginal-
+item claim is supported for any tested judge.
 
-Real data (each caught by a gate): freed latent scale (tau_item ~ 2.0);
-one-instrument-per-model+method after correlated paraphrase cells outvoted
-the human criterion; reflection-mode handling (data-informed inits +
-zero-avoiding tau_item prior); instrument-by-item error, which repriced qwen
-from a fictitious .90 to an honest .54.
+## What the day's three external reviews and the gates changed
 
-Review 2 (GPT-family, via Brett): new-family effects outside the sum-to-zero
-vector; ladder enforcement with hash-bound evidence; new-family predictive
-reliability as the gate quantity (global ratio demoted); contamination cap
-extended to ranking; tie-aware pooled Spearman with cluster bootstrap;
-same-raters LOCO target; two-mode per-family PPC with a proper category-usage
-reference; training-only standardization; SLOR unit consistency; checkpoint
-provenance; expanded recovery and diagnostics gates.
-
-## Reading the numbers against the literature
-
-Published r = .8 human-LLM correlations (Qiu et al. 2024, ChatGPT) sit between
-this pilot's qwen3:8b (.72) and the human split-half ceiling (.857). The
-contribution is the decomposition and the certificate: how much is theta
-signal, how much is the instrument's stable per-item opinion, how transfer
-behaves family by family, and which claims the package does and does not
-license, with every number bound to the posterior it came from.
+Review 1 (glm-4.7-flash): family-varying linking, PPC gate, contamination
+caps, observed-mean LOCO target. Real data then forced: freed latent scale
+(tau_item ~ 2.0), one-instrument-per-model+method, reflection-mode handling,
+instrument-by-item error (reliability .90 -> .54 honest). Review 2
+(GPT-family): new-family effects outside the zero-sum vector, hash binding,
+predictive reliability, tie-aware pooled statistics. Review 3 (GPT-family):
+sign-aware directional reliability, contamination vitiates screening too,
+recomputed binding with model hashes, simulated new-family recovery,
+rebuilt gated instrument PPC, claim matrix with sharpness gate, structural
+refusal of unanchored family location. Assurance layer folded in from the
+AI-safety papers: licence life-cycle, projectibility profiles, typed
+refusals, frozen threshold spec, answerability. Full trail: DECISIONS.md.
 
 ## Caveats
 
-Single language, single (contamination-suspect) item source, constructed
-sentences, two instruments, one register, one date. The certificate lists the
-untested axes explicitly. v2 priorities, in value order: post-cutoff item set
-(tests aggregate estimation for real), ordered-logistic scalar arm,
-binary-arm overdispersion, rater-specific cutpoints, prior-sensitivity sweep,
-population-transfer test.
+One language, one contamination-suspect item source, constructed sentences,
+one register, one date; Opus used a batched protocol (recorded in its cell
+identity). The certificate lists untested axes. v2 priorities: post-cutoff
+item set (the only route to any deployment grant), rater-style modeling
+(clears the PPC), ordered-logistic scalar arm, binary overdispersion,
+per-tier PPC consequence map, population-transfer test.
 
 ## Artifacts
 
-`runs/pilot/`: posterior.nc, run.json (hashes), diagnostics.json,
-recovery.json, sbc.json, ppc.json, loco.json, warrant.yaml, estimand.yaml,
-split_half.json, measurements.jsonl, grid_manifest.yaml, plots. Data
-provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
+`runs/pilot/`: warrant.yaml, run.json, recovery.json, sbc.json, newfam.json,
+ppc.json, loco.json, posterior.nc, posterior_summary.json,
+response_style.json, instruments.json, estimand.yaml, plots.
+`runs/multi/measurements.jsonl`: cross-model judgments. Provenance:
+`data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`; cross-model evidence:
+`scripts/response_evidence.py`, `scripts/agy_judge.py`.
 
 ```
 
 
 ---
 
-## EVIDENCE (all from the post-review-2 model, hash-bound; see run.json)
+## EVIDENCE
 
-### run.json
+### warrant.yaml (the emitted certificate)
 
-```json
-{
-  "run_id": "2868417c-3344-40c5-9f5f-bdd7f1af8407",
-  "posterior_sha256": "80db0630980a5a751e45c033267c6c3fb8e07a1aea262d1461fd0973e3c69779",
-  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86",
-  "code_commit": "f13c22b8ba8703f0c109bd2e0616fb4f376249b4",
-  "n_items_criterion": 120,
-  "n_items_total": 120,
-  "input_hashes": {
-    "items": "f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c",
-    "human": "5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec",
-    "measurements": "1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a"
-  }
-}
+```yaml
+generated: '2026-08-27T21:53:04'
+run_dir: runs/pilot
+run_id: 6068b87c-5576-4a69-bebe-e6cc8f3cb75a
+posterior_sha256_recomputed: 06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723
+stan_sha256_recomputed: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+licence:
+  status: descriptive_only
+  issued_by: Brett Reynolds (analysis executed by Claude Fable 5, 2026-08-27 session;
+    contestation route in the licence block)
+  issued: '2026-08-27'
+  threshold_spec:
+    spec_version: 1.0.0
+    spec_sha256: 2388075641560db3f33f509ece14f4ca31a1875933673518ff15b5cdc14640d3
+  expiry_conditions:
+  - any instrument version change (checkpoint commit, digest, or serving stack) relative
+    to the recorded provenance
+  - any change to the item pool, criterion data, or measurements (hashes in run.json)
+  - any change to the Stan model (stan_sha256)
+  erosion_conditions:
+  - selecting prompts, models, or items against this certificate's gate statistics
+    vitiates those statistics (Goodhart)
+  - repeated selective re-running until a gate passes
+  defeat_and_supersession: a later certificate built for this run_dir supersedes this
+    one; a failed re-validation defeats all outstanding grants
+  contestation: re-run scripts/pilot.py and rebuild the warrant, or submit the current
+    validation packet (reviews/) to an independent reviewer; disagreement with a gate
+    is a spec revision, not an edit
+estimand:
+  target: mean 7-point Likert acceptability rating per decontextualized sentence
+  population: the participant population of Sprouse, Schütze & Almeida (2013), Lingua
+    (Linguistic Inquiry 2001-2010 random-sample judgment study); no demographic claims
+    beyond their sampling are made or tested
+  response_scale: 1-7 Likert, decontextualized written sentences
+domain:
+  construction_families:
+  - 32.1.martin
+  - 32.3.Culicover
+  - 32.3.fanselow
+  - 33.4.neeleman
+  - 34.1.fox
+  - 34.1.phillips
+  - 34.3.heycock
+  - 34.4.boskovic
+  - 41.3.Landau
+  - 41.3.Vicente
+  n_items_total: 120
+  n_items_with_human_criterion: 120
+  item_source: Sprouse-Schütze-Almeida 2013 LI materials, pilot subset
+  language: English (US)
+  register: constructed linguistic example sentences
+  families: 10 LI source papers, 12 items each (6 starred / 6 good)
+instruments: []
+evidence:
+  run:
+    run_id: 6068b87c-5576-4a69-bebe-e6cc8f3cb75a
+    posterior_sha256: 06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723
+    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+    code_commit: 62191e84ff1b9e468dad770a428efcdc3d24d235
+    n_items_criterion: 120
+    n_items_total: 120
+    input_hashes:
+      items: f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c
+      human: 5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec
+      measurements: 1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a
+  binding:
+    run: bound
+    ppc: bound
+    loco: bound
+    recovery: bound
+    sbc: bound
+    newfam: bound
+  diagnostics:
+    divergences: 2
+    divergence_rate: 0.0003
+    rhat_max: 1.0032
+    ess_bulk_min: 708
+    passed: true
+  fake_data_recovery:
+    theta_90ci_coverage: 0.875
+    theta_post_mean_corr_truth: 0.961
+    beta_within_95ci: true
+    beta_post_mean:
+    - 0.27
+    - 0.453
+    - 0.368
+    beta_truth:
+    - 0.312
+    - 0.421
+    - 0.359
+    tau_item_within_95ci: true
+    tau_item_post_median:
+    - 1.126
+    tau_a_within_95ci: true
+    tau_a_post_median:
+    - 0.081
+    - 0.115
+    - 0.121
+    tau_b_within_95ci: true
+    tau_b_post_median:
+    - 0.099
+    - 0.139
+    - 0.147
+    reliability_max_abs_err: 0.08
+    reliability_truth:
+    - 0.271
+    - 0.529
+    - 0.481
+    passed: true
+    diagnostics:
+      divergences: 0
+      divergence_rate: 0.0
+      rhat_max: 1.0046
+      ess_bulk_min: 598
+      passed: true
+    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+  sbc:
+    R: 100
+    n_failed_fits: 0
+    n_diag_failed: 8
+    n_thin: 63
+    params:
+      tau_constr:
+        chi2: 3.72
+        p_uniform_approx: 0.717
+        rank_hist:
+        - 18
+        - 11
+        - 11
+        - 11
+        - 15
+        - 15
+        - 11
+      tau_item:
+        chi2: 3.11
+        p_uniform_approx: 0.7968
+        rank_hist:
+        - 12
+        - 15
+        - 10
+        - 18
+        - 12
+        - 13
+        - 12
+      sigma_u:
+        chi2: 3.11
+        p_uniform_approx: 0.7968
+        rank_hist:
+        - 11
+        - 9
+        - 17
+        - 15
+        - 14
+        - 13
+        - 13
+      beta[1]:
+        chi2: 5.24
+        p_uniform_approx: 0.5148
+        rank_hist:
+        - 14
+        - 16
+        - 14
+        - 9
+        - 8
+        - 17
+        - 14
+      beta[2]:
+        chi2: 2.5
+        p_uniform_approx: 0.8692
+        rank_hist:
+        - 13
+        - 11
+        - 13
+        - 15
+        - 10
+        - 17
+        - 13
+      sigma_s[1]:
+        chi2: 13.3
+        p_uniform_approx: 0.0382
+        rank_hist:
+        - 9
+        - 12
+        - 13
+        - 8
+        - 19
+        - 22
+        - 9
+      sigma_s[2]:
+        chi2: 10.41
+        p_uniform_approx: 0.1074
+        rank_hist:
+        - 21
+        - 10
+        - 19
+        - 11
+        - 11
+        - 9
+        - 11
+      tau_b[1]:
+        chi2: 3.87
+        p_uniform_approx: 0.6965
+        rank_hist:
+        - 15
+        - 9
+        - 15
+        - 14
+        - 14
+        - 16
+        - 9
+      tau_b[2]:
+        chi2: 2.96
+        p_uniform_approx: 0.8158
+        rank_hist:
+        - 12
+        - 18
+        - 14
+        - 10
+        - 14
+        - 12
+        - 12
+      omega[1]:
+        chi2: 3.57
+        p_uniform_approx: 0.7374
+        rank_hist:
+        - 18
+        - 11
+        - 13
+        - 14
+        - 11
+        - 10
+        - 15
+      omega[2]:
+        chi2: 6.0
+        p_uniform_approx: 0.4237
+        rank_hist:
+        - 17
+        - 10
+        - 9
+        - 9
+        - 15
+        - 16
+        - 16
+    failed_fit_truths:
+    - tau_constr: 0.81
+      tau_item: 3.49
+      sigma_u: 0.64
+    - tau_constr: 0.09
+      tau_item: 1.44
+      sigma_u: 0.92
+    - tau_constr: 1.18
+      tau_item: 3.01
+      sigma_u: 0.32
+    - tau_constr: 0.65
+      tau_item: 0.08
+      sigma_u: 0.62
+    - tau_constr: 1.15
+      tau_item: 3.56
+      sigma_u: 0.8
+    - tau_constr: 1.09
+      tau_item: 0.61
+      sigma_u: 0.34
+    - tau_constr: 1.96
+      tau_item: 0.31
+      sigma_u: 2.02
+    - tau_constr: 0.3
+      tau_item: 0.17
+      sigma_u: 1.07
+    passed: true
+    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+  new_family_recovery:
+    n_new_families: 2
+    diagnostics:
+      divergences: 0
+      divergence_rate: 0.0
+      rhat_max: 1.0039
+      ess_bulk_min: 1054
+      passed: true
+    per_family:
+      fam7:
+        theta_within_coverage90: 0.833
+        within_rank_corr_truth: 0.839
+        family_location_bias: 0.175
+      fam8:
+        theta_within_coverage90: 0.833
+        within_rank_corr_truth: 0.853
+        family_location_bias: -0.346
+    mean_within_coverage90: 0.833
+    passed: true
+    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+    note: 'family_location_bias is reported unGated: absolute location of an unanchored
+      family is prior-identified (delta-invariance with per-cell family intercepts)'
+  loco_transfer:
+    target: same participants, new items
+    per_family:
+      32.1.martin:
+        n_items: 12
+        rmse: 0.849
+        mean_signed_error: -0.462
+        spearman: 0.884
+        coverage90: 0.917
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 1
+          divergence_rate: 0.0001
+          rhat_max: 1.0053
+          ess_bulk_min: 941
+          passed: true
+      32.3.Culicover:
+        n_items: 12
+        rmse: 0.866
+        mean_signed_error: -0.008
+        spearman: 0.546
+        coverage90: 1.0
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 1
+          divergence_rate: 0.0001
+          rhat_max: 1.0037
+          ess_bulk_min: 1235
+          passed: true
+      32.3.fanselow:
+        n_items: 12
+        rmse: 1.14
+        mean_signed_error: 0.466
+        spearman: 0.951
+        coverage90: 0.917
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 1
+          divergence_rate: 0.0001
+          rhat_max: 1.0053
+          ess_bulk_min: 1096
+          passed: true
+      33.4.neeleman:
+        n_items: 12
+        rmse: 0.997
+        mean_signed_error: 0.338
+        spearman: 0.789
+        coverage90: 0.917
+        diagnostics_passed: false
+        diagnostics:
+          divergences: 0
+          divergence_rate: 0.0
+          rhat_max: 1.0127
+          ess_bulk_min: 741
+          passed: false
+      34.1.fox:
+        n_items: 12
+        rmse: 1.453
+        mean_signed_error: -0.19
+        spearman: -0.028
+        coverage90: 0.75
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 1
+          divergence_rate: 0.0001
+          rhat_max: 1.0055
+          ess_bulk_min: 988
+          passed: true
+      34.1.phillips:
+        n_items: 12
+        rmse: 0.736
+        mean_signed_error: -0.104
+        spearman: 0.83
+        coverage90: 1.0
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 6
+          divergence_rate: 0.0008
+          rhat_max: 1.006
+          ess_bulk_min: 1014
+          passed: true
+      34.3.heycock:
+        n_items: 12
+        rmse: 1.309
+        mean_signed_error: -0.211
+        spearman: 0.657
+        coverage90: 0.833
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 1
+          divergence_rate: 0.0001
+          rhat_max: 1.0097
+          ess_bulk_min: 951
+          passed: true
+      34.4.boskovic:
+        n_items: 12
+        rmse: 0.736
+        mean_signed_error: 0.363
+        spearman: 0.846
+        coverage90: 1.0
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 0
+          divergence_rate: 0.0
+          rhat_max: 1.005
+          ess_bulk_min: 910
+          passed: true
+      41.3.Landau:
+        n_items: 12
+        rmse: 1.152
+        mean_signed_error: 0.157
+        spearman: 0.613
+        coverage90: 0.917
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 0
+          divergence_rate: 0.0
+          rhat_max: 1.0039
+          ess_bulk_min: 1082
+          passed: true
+      41.3.Vicente:
+        n_items: 12
+        rmse: 0.685
+        mean_signed_error: -0.128
+        spearman: 0.881
+        coverage90: 1.0
+        diagnostics_passed: true
+        diagnostics:
+          divergences: 2
+          divergence_rate: 0.0003
+          rhat_max: 1.0039
+          ess_bulk_min: 947
+          passed: true
+    n_families: 10
+    families_tested:
+    - 32.1.martin
+    - 32.3.Culicover
+    - 32.3.fanselow
+    - 33.4.neeleman
+    - 34.1.fox
+    - 34.1.phillips
+    - 34.3.heycock
+    - 34.4.boskovic
+    - 41.3.Landau
+    - 41.3.Vicente
+    pooled_spearman_descriptive: 0.742
+    pooled_spearman_cluster_boot_lower90: 0.654
+    between_family_spearman: 0.406
+    within_family_spearman_min: -0.028
+    frac_families_within_spearman_gt_0.3: 0.9
+    sd_observed_item_means: 1.532
+    mean_spearman: 0.687
+    mean_rmse: 0.992
+    mean_coverage90: 0.926
+    all_diagnostics_passed: false
+    input_hashes:
+      items: f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c
+      human: 5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec
+      measurements: 1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a
+    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
+  ppc:
+    n_sims: 1000
+    families:
+    - 32.1.martin
+    - 32.3.Culicover
+    - 32.3.fanselow
+    - 33.4.neeleman
+    - 34.1.fox
+    - 34.1.phillips
+    - 34.3.heycock
+    - 34.4.boskovic
+    - 41.3.Landau
+    - 41.3.Vicente
+    posterior_sha256: 06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723
+    conditional:
+      family_spread_ppp:
+        32.1.martin: 0.99
+        32.3.Culicover: 0.634
+        32.3.fanselow: 0.246
+        33.4.neeleman: 0.528
+        34.1.fox: 0.994
+        34.1.phillips: 0.788
+        34.3.heycock: 0.772
+        34.4.boskovic: 0.392
+        41.3.Landau: 0.82
+        41.3.Vicente: 0.858
+      family_spread_ppp_min: 0.246
+      within_item_sd_global_ppp: 0.754
+      within_item_sd_family_ppp_min: 0.02
+      category_usage_ppp: 1.0
+      participant_entropy_ppp: 0.0
+      participant_range_ppp: 0.162
+      passed: false
+    marginal:
+      family_spread_ppp:
+        32.1.martin: 0.926
+        32.3.Culicover: 0.528
+        32.3.fanselow: 0.186
+        33.4.neeleman: 0.44
+        34.1.fox: 0.906
+        34.1.phillips: 0.954
+        34.3.heycock: 0.768
+        34.4.boskovic: 0.486
+        41.3.Landau: 0.812
+        41.3.Vicente: 0.922
+      family_spread_ppp_min: 0.186
+      within_item_sd_global_ppp: 0.752
+      within_item_sd_family_ppp_min: 0.026
+      category_usage_ppp: 1.0
+      participant_entropy_ppp: 0.006
+      participant_range_ppp: 0.204
+      passed: false
+    instrument_ppc:
+      cell_family_ppp:
+        pythia-160m/slor|32.1.martin: 0.98
+        pythia-160m/slor|32.3.Culicover: 0.835
+        pythia-160m/slor|32.3.fanselow: 0.735
+        pythia-160m/slor|33.4.neeleman: 0.935
+        pythia-160m/slor|34.1.fox: 0.755
+        pythia-160m/slor|34.1.phillips: 0.835
+        pythia-160m/slor|34.3.heycock: 0.9
+        pythia-160m/slor|34.4.boskovic: 0.95
+        pythia-160m/slor|41.3.Landau: 0.915
+        pythia-160m/slor|41.3.Vicente: 0.895
+        qwen3:8b/prompt_scalar|32.1.martin: 0.93
+        qwen3:8b/prompt_scalar|32.3.Culicover: 0.965
+        qwen3:8b/prompt_scalar|32.3.fanselow: 0.905
+        qwen3:8b/prompt_scalar|33.4.neeleman: 0.95
+        qwen3:8b/prompt_scalar|34.1.fox: 0.975
+        qwen3:8b/prompt_scalar|34.1.phillips: 0.99
+        qwen3:8b/prompt_scalar|34.3.heycock: 0.98
+        qwen3:8b/prompt_scalar|34.4.boskovic: 0.915
+        qwen3:8b/prompt_scalar|41.3.Landau: 0.94
+        qwen3:8b/prompt_scalar|41.3.Vicente: 0.97
+      min_ppp: 0.735
+      passed: true
+    passed: false
+  multiverse_spread:
+    mean_per_item_sd_across_cells: 0.627
+    n_items: 120
+    n_cells: 2
+  human_split_half: 0.857 (mean of 200 random participant splits, 120 items; Spearman-Brown
+    corrected 0.923; computed from data/pilot_human.csv)
+  contamination:
+    status: suspect
+    reason: Sprouse-Schutze-Almeida LI materials are drawn from Linguistic Inquiry
+      articles (2001-2010) and the dataset has been publicly posted since 2013; presence
+      in LLM pretraining corpora cannot be excluded for either instrument.
+  instrument_nonresponse:
+    qwen3:8b/prompt_binary: 0.0
+    qwen3:8b/prompt_scalar: 0.0
+  flagged_cells: none
+  generalization_axes:
+    tested:
+    - construction_family (LOCO-CV, purposive family sample; descriptive over the
+      families tested)
+    untested:
+    - population
+    - register
+    - language
+    - item_source
+    - time
+    - model_version (beyond drift sentinels)
+licensed_claims: {}
+refused_claims:
+  screening:
+    type: affirmative_failure
+    reason: PPC failed (human or instrument arm)
+    remedy: the fitted model misfits the criterion data; revise the model
+  ranking_within_family:
+    type: affirmative_failure
+    reason: PPC failed (human or instrument arm)
+    remedy: the fitted model misfits the criterion data; revise the model
+  family_location_unanchored:
+    type: structural
+    reason: absolute location of a family with no human anchor is prior-identified,
+      not likelihood-identified (delta-invariance against per-cell family intercepts)
+    remedy: collect human anchor items in each new family, or accept within-family
+      claims only
+  aggregate_estimation:
+    type: affirmative_failure
+    reason: PPC failed (human or instrument arm)
+    remedy: the fitted model misfits the criterion data; revise the model
+  effect_reproduction:
+    type: unevaluable
+    reason: 'not yet tested: requires matched experimental contrasts'
+    remedy: add a matched-contrast validation stage (v2)
+  distributional_claims:
+    type: affirmative_failure
+    reason: no participant-level validation of variance structure; posterior predictive
+      checks failed
+    remedy: model and validate rater heterogeneity (v2)
+  population_transfer:
+    type: unevaluable
+    reason: the v1 ladder contains no population-transfer test; the estimand population
+      defaults to the criterion sample's own
+    remedy: add stratified human anchors from the target population (v2)
+  individual_simulation:
+    type: structural
+    reason: an item-level instrument licenses no individual-level human simulation
+    remedy: 'none: outside this design''s claim space'
+  mechanism_claims:
+    type: structural
+    reason: the model estimates a linking function, not a mechanism
+    remedy: 'none: outside this design''s claim space'
+descriptive_findings:
+  note: in-source descriptive associations on this item set; not deployment evidence
+  pooled_heldout_spearman: 0.742
+  between_family_spearman: 0.406
+  per_family_within_spearman:
+    32.1.martin: 0.884
+    32.3.Culicover: 0.546
+    32.3.fanselow: 0.951
+    33.4.neeleman: 0.789
+    34.1.fox: -0.028
+    34.1.phillips: 0.83
+    34.3.heycock: 0.657
+    34.4.boskovic: 0.846
+    41.3.Landau: 0.613
+    41.3.Vicente: 0.881
+  human_split_half: 0.857 (mean of 200 random participant splits, 120 items; Spearman-Brown
+    corrected 0.923; computed from data/pilot_human.csv)
+  response_style:
+    marginal_band:
+    - 3.0
+    - 5.0
+    cells:
+      claude-opus-4.6-agy/prompt_scalar_batch20:
+        n_items: 120
+        r_all: 0.834
+        r_marginal_band: 0.397
+        r_marginal_band_n: 47
+        r_outside_band: 0.935
+        r_outside_band_n: 73
+      gemma3:12b/prompt_scalar:
+        n_items: 120
+        r_all: 0.745
+        r_marginal_band: 0.275
+        r_marginal_band_n: 47
+        r_outside_band: 0.852
+        r_outside_band_n: 73
+      mistral-small:24b-instruct-2501-q4_K_M/prompt_scalar:
+        n_items: 120
+        r_all: 0.791
+        r_marginal_band: 0.236
+        r_marginal_band_n: 47
+        r_outside_band: 0.866
+        r_outside_band_n: 73
+      pythia-160m/logprob_mean:
+        n_items: 120
+        r_all: 0.366
+        r_marginal_band: -0.27
+        r_marginal_band_n: 47
+        r_outside_band: 0.507
+        r_outside_band_n: 73
+      pythia-160m/logprob_sum:
+        n_items: 120
+        r_all: 0.156
+        r_marginal_band: 0.21
+        r_marginal_band_n: 47
+        r_outside_band: 0.148
+        r_outside_band_n: 73
+      pythia-160m/slor:
+        n_items: 120
+        r_all: 0.35
+        r_marginal_band: -0.179
+        r_marginal_band_n: 47
+        r_outside_band: 0.505
+        r_outside_band_n: 73
+      qwen3:8b/prompt_scalar:
+        n_items: 120
+        r_all: 0.724
+        r_marginal_band: 0.183
+        r_marginal_band_n: 47
+        r_outside_band: 0.851
+        r_outside_band_n: 73
+    category_usage:
+      human:
+        '1': 0.144
+        '2': 0.131
+        '3': 0.119
+        '4': 0.135
+        '5': 0.128
+        '6': 0.127
+        '7': 0.217
+      claude-opus-4.6-agy/prompt_scalar_batch20:
+        usage:
+          '1': 0.086
+          '2': 0.231
+          '3': 0.131
+          '4': 0.05
+          '5': 0.147
+          '6': 0.125
+          '7': 0.231
+        categories_never_emitted: none
+      gemma3:12b/prompt_scalar:
+        usage:
+          '1': 0.078
+          '2': 0.068
+          '3': 0.274
+          '4': 0.151
+          '5': 0.067
+          '6': 0.18
+          '7': 0.183
+        categories_never_emitted: none
+      mistral-small:24b-instruct-2501-q4_K_M/prompt_scalar:
+        usage:
+          '1': 0.03
+          '2': 0.046
+          '3': 0.225
+          '4': 0.193
+          '5': 0.206
+          '6': 0.125
+          '7': 0.176
+        categories_never_emitted: none
+      qwen3:8b/prompt_scalar:
+        usage:
+          '1': 0.075
+          '2': 0.218
+          '3': 0.118
+          '4': 0.083
+          '5': 0.094
+          '6': 0.311
+          '7': 0.101
+        categories_never_emitted: none
+residual_risks:
+- 'binding integrity is not construct validity: a pristine, fully bound record can
+  still document the wrong predicate; hash checks discharge staleness, not meaning'
+- 'shared pretraining bias: local instruments share web-scale training data and can
+  share construction-specific error; a tight multiverse fan does not rule this out'
+- reliability quantities are fit- and item-set-specific and conditional on a family-exchangeability
+  extrapolation model
+- thresholds are pre-registered defaults, not estimand-specific loss analyses
+- prompt-level dependence within pooled paraphrase cells is not yet modeled (nested
+  prompt effects are v2)
+
 ```
 
-### recovery.json
+### recovery / sbc / newfam / diagnostics / ppc / loco / response_style
 
 ```json
 {
@@ -2481,120 +3794,232 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
     "rhat_max": 1.0046,
     "ess_bulk_min": 598,
     "passed": true
-  }
+  },
+  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86"
 }
 
-```
-
-### sbc.json (R=100, 500/500, diagnostics-aware)
-
-```json
 {
   "R": 100,
   "n_failed_fits": 0,
-  "n_diag_failed": 19,
+  "n_diag_failed": 8,
   "n_thin": 63,
   "params": {
     "tau_constr": {
-      "chi2": 1.08,
-      "p_uniform_approx": 0.9808,
+      "chi2": 3.72,
+      "p_uniform_approx": 0.717,
       "rank_hist": [
-        16,
-        16,
-        12,
+        18,
+        11,
+        11,
+        11,
         15,
-        13,
-        13,
-        15
+        15,
+        11
       ]
     },
     "tau_item": {
-      "chi2": 1.78,
-      "p_uniform_approx": 0.938,
+      "chi2": 3.11,
+      "p_uniform_approx": 0.7968,
       "rank_hist": [
         12,
-        17,
-        14,
-        17,
-        14,
+        15,
+        10,
+        18,
         12,
-        14
+        13,
+        12
       ]
     },
     "sigma_u": {
-      "chi2": 1.36,
-      "p_uniform_approx": 0.9668,
+      "chi2": 3.11,
+      "p_uniform_approx": 0.7968,
       "rank_hist": [
         11,
-        15,
-        16,
-        16,
+        9,
+        17,
         15,
         14,
+        13,
         13
       ]
     },
     "beta[1]": {
-      "chi2": 2.2,
-      "p_uniform_approx": 0.9005,
+      "chi2": 5.24,
+      "p_uniform_approx": 0.5148,
       "rank_hist": [
         14,
-        18,
-        13,
-        13,
-        11,
-        15,
-        16
+        16,
+        14,
+        9,
+        8,
+        17,
+        14
       ]
     },
     "beta[2]": {
-      "chi2": 7.24,
-      "p_uniform_approx": 0.2987,
+      "chi2": 2.5,
+      "p_uniform_approx": 0.8692,
       "rank_hist": [
-        18,
+        13,
+        11,
+        13,
+        15,
         10,
-        11,
-        21,
-        11,
-        16,
+        17,
         13
       ]
     },
     "sigma_s[1]": {
-      "chi2": 1.5,
-      "p_uniform_approx": 0.9582,
+      "chi2": 13.3,
+      "p_uniform_approx": 0.0382,
       "rank_hist": [
-        14,
-        11,
-        16,
-        14,
+        9,
+        12,
         13,
-        16,
-        16
+        8,
+        19,
+        22,
+        9
       ]
     },
     "sigma_s[2]": {
-      "chi2": 12.84,
-      "p_uniform_approx": 0.0453,
+      "chi2": 10.41,
+      "p_uniform_approx": 0.1074,
       "rank_hist": [
-        25,
+        21,
+        10,
+        19,
         11,
+        11,
+        9,
+        11
+      ]
+    },
+    "tau_b[1]": {
+      "chi2": 3.87,
+      "p_uniform_approx": 0.6965,
+      "rank_hist": [
+        15,
+        9,
+        15,
+        14,
+        14,
+        16,
+        9
+      ]
+    },
+    "tau_b[2]": {
+      "chi2": 2.96,
+      "p_uniform_approx": 0.8158,
+      "rank_hist": [
+        12,
         18,
         14,
-        9,
-        11,
+        10,
+        14,
+        12,
         12
+      ]
+    },
+    "omega[1]": {
+      "chi2": 3.57,
+      "p_uniform_approx": 0.7374,
+      "rank_hist": [
+        18,
+        11,
+        13,
+        14,
+        11,
+        10,
+        15
+      ]
+    },
+    "omega[2]": {
+      "chi2": 6.0,
+      "p_uniform_approx": 0.4237,
+      "rank_hist": [
+        17,
+        10,
+        9,
+        9,
+        15,
+        16,
+        16
       ]
     }
   },
-  "passed": true
+  "failed_fit_truths": [
+    {
+      "tau_constr": 0.81,
+      "tau_item": 3.49,
+      "sigma_u": 0.64
+    },
+    {
+      "tau_constr": 0.09,
+      "tau_item": 1.44,
+      "sigma_u": 0.92
+    },
+    {
+      "tau_constr": 1.18,
+      "tau_item": 3.01,
+      "sigma_u": 0.32
+    },
+    {
+      "tau_constr": 0.65,
+      "tau_item": 0.08,
+      "sigma_u": 0.62
+    },
+    {
+      "tau_constr": 1.15,
+      "tau_item": 3.56,
+      "sigma_u": 0.8
+    },
+    {
+      "tau_constr": 1.09,
+      "tau_item": 0.61,
+      "sigma_u": 0.34
+    },
+    {
+      "tau_constr": 1.96,
+      "tau_item": 0.31,
+      "sigma_u": 2.02
+    },
+    {
+      "tau_constr": 0.3,
+      "tau_item": 0.17,
+      "sigma_u": 1.07
+    }
+  ],
+  "passed": true,
+  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86"
 }
 
-```
-
-### diagnostics.json + ppc.json
-
-```json
+{
+  "n_new_families": 2,
+  "diagnostics": {
+    "divergences": 0,
+    "divergence_rate": 0.0,
+    "rhat_max": 1.0039,
+    "ess_bulk_min": 1054,
+    "passed": true
+  },
+  "per_family": {
+    "fam7": {
+      "theta_within_coverage90": 0.833,
+      "within_rank_corr_truth": 0.839,
+      "family_location_bias": 0.175
+    },
+    "fam8": {
+      "theta_within_coverage90": 0.833,
+      "within_rank_corr_truth": 0.853,
+      "family_location_bias": -0.346
+    }
+  },
+  "mean_within_coverage90": 0.833,
+  "passed": true,
+  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86",
+  "note": "family_location_bias is reported unGated: absolute location of an unanchored family is prior-identified (delta-invariance with per-cell family intercepts)"
+}
 {
   "divergences": 2,
   "divergence_rate": 0.0003,
@@ -2616,7 +4041,7 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
     "41.3.Landau",
     "41.3.Vicente"
   ],
-  "posterior_sha256": "80db0630980a5a751e45c033267c6c3fb8e07a1aea262d1461fd0973e3c69779",
+  "posterior_sha256": "06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723",
   "conditional": {
     "family_spread_ppp": {
       "32.1.martin": 0.99,
@@ -2634,7 +4059,9 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
     "within_item_sd_global_ppp": 0.754,
     "within_item_sd_family_ppp_min": 0.02,
     "category_usage_ppp": 1.0,
-    "passed": true
+    "participant_entropy_ppp": 0.0,
+    "participant_range_ppp": 0.162,
+    "passed": false
   },
   "marginal": {
     "family_spread_ppp": {
@@ -2653,268 +4080,189 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
     "within_item_sd_global_ppp": 0.752,
     "within_item_sd_family_ppp_min": 0.026,
     "category_usage_ppp": 1.0,
+    "participant_entropy_ppp": 0.006,
+    "participant_range_ppp": 0.204,
+    "passed": false
+  },
+  "instrument_ppc": {
+    "cell_family_ppp": {
+      "pythia-160m/slor|32.1.martin": 0.98,
+      "pythia-160m/slor|32.3.Culicover": 0.835,
+      "pythia-160m/slor|32.3.fanselow": 0.735,
+      "pythia-160m/slor|33.4.neeleman": 0.935,
+      "pythia-160m/slor|34.1.fox": 0.755,
+      "pythia-160m/slor|34.1.phillips": 0.835,
+      "pythia-160m/slor|34.3.heycock": 0.9,
+      "pythia-160m/slor|34.4.boskovic": 0.95,
+      "pythia-160m/slor|41.3.Landau": 0.915,
+      "pythia-160m/slor|41.3.Vicente": 0.895,
+      "qwen3:8b/prompt_scalar|32.1.martin": 0.93,
+      "qwen3:8b/prompt_scalar|32.3.Culicover": 0.965,
+      "qwen3:8b/prompt_scalar|32.3.fanselow": 0.905,
+      "qwen3:8b/prompt_scalar|33.4.neeleman": 0.95,
+      "qwen3:8b/prompt_scalar|34.1.fox": 0.975,
+      "qwen3:8b/prompt_scalar|34.1.phillips": 0.99,
+      "qwen3:8b/prompt_scalar|34.3.heycock": 0.98,
+      "qwen3:8b/prompt_scalar|34.4.boskovic": 0.915,
+      "qwen3:8b/prompt_scalar|41.3.Landau": 0.94,
+      "qwen3:8b/prompt_scalar|41.3.Vicente": 0.97
+    },
+    "min_ppp": 0.735,
     "passed": true
   },
-  "instrument_residual_flags": [
-    {
-      "cell": "pythia-160m/slor",
-      "family": "32.1.martin",
-      "z": 8.56
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "32.3.Culicover",
-      "z": 9.22
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "32.3.fanselow",
-      "z": 9.67
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "33.4.neeleman",
-      "z": 7.38
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "34.1.fox",
-      "z": 9.09
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "34.1.phillips",
-      "z": 8.64
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "34.3.heycock",
-      "z": 7.37
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "34.4.boskovic",
-      "z": 8.95
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "41.3.Landau",
-      "z": 8.82
-    },
-    {
-      "cell": "pythia-160m/slor",
-      "family": "41.3.Vicente",
-      "z": 7.04
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "32.1.martin",
-      "z": 130.22
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "32.3.Culicover",
-      "z": 126.4
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "32.3.fanselow",
-      "z": 106.4
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "33.4.neeleman",
-      "z": 138.65
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "34.1.fox",
-      "z": 154.5
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "34.1.phillips",
-      "z": 128.28
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "34.3.heycock",
-      "z": 140.16
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "34.4.boskovic",
-      "z": 146.1
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "41.3.Landau",
-      "z": 151.41
-    },
-    {
-      "cell": "qwen3:8b/prompt_scalar",
-      "family": "41.3.Vicente",
-      "z": 129.85
-    }
-  ],
-  "passed": true
+  "passed": false
 }
 
-```
-
-### loco.json
-
-```json
 {
   "target": "same participants, new items",
   "per_family": {
     "32.1.martin": {
       "n_items": 12,
-      "rmse": 0.847,
-      "mean_signed_error": -0.467,
+      "rmse": 0.849,
+      "mean_signed_error": -0.462,
       "spearman": 0.884,
       "coverage90": 0.917,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 5,
-        "divergence_rate": 0.0006,
-        "rhat_max": 1.006,
-        "ess_bulk_min": 1248,
+        "divergences": 1,
+        "divergence_rate": 0.0001,
+        "rhat_max": 1.0053,
+        "ess_bulk_min": 941,
         "passed": true
       }
     },
     "32.3.Culicover": {
       "n_items": 12,
-      "rmse": 0.862,
-      "mean_signed_error": -0.016,
+      "rmse": 0.866,
+      "mean_signed_error": -0.008,
       "spearman": 0.546,
       "coverage90": 1.0,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 4,
-        "divergence_rate": 0.0005,
-        "rhat_max": 1.0096,
-        "ess_bulk_min": 799,
+        "divergences": 1,
+        "divergence_rate": 0.0001,
+        "rhat_max": 1.0037,
+        "ess_bulk_min": 1235,
         "passed": true
       }
     },
     "32.3.fanselow": {
       "n_items": 12,
-      "rmse": 1.145,
-      "mean_signed_error": 0.481,
+      "rmse": 1.14,
+      "mean_signed_error": 0.466,
       "spearman": 0.951,
       "coverage90": 0.917,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0027,
-        "ess_bulk_min": 1449,
+        "divergences": 1,
+        "divergence_rate": 0.0001,
+        "rhat_max": 1.0053,
+        "ess_bulk_min": 1096,
         "passed": true
       }
     },
     "33.4.neeleman": {
       "n_items": 12,
-      "rmse": 1.003,
-      "mean_signed_error": 0.344,
+      "rmse": 0.997,
+      "mean_signed_error": 0.338,
       "spearman": 0.789,
       "coverage90": 0.917,
-      "diagnostics_passed": true,
+      "diagnostics_passed": false,
       "diagnostics": {
-        "divergences": 3,
-        "divergence_rate": 0.0004,
-        "rhat_max": 1.0067,
-        "ess_bulk_min": 1243,
-        "passed": true
+        "divergences": 0,
+        "divergence_rate": 0.0,
+        "rhat_max": 1.0127,
+        "ess_bulk_min": 741,
+        "passed": false
       }
     },
     "34.1.fox": {
       "n_items": 12,
-      "rmse": 1.452,
-      "mean_signed_error": -0.178,
+      "rmse": 1.453,
+      "mean_signed_error": -0.19,
       "spearman": -0.028,
-      "coverage90": 0.833,
+      "coverage90": 0.75,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 2,
-        "divergence_rate": 0.0003,
-        "rhat_max": 1.0043,
-        "ess_bulk_min": 963,
+        "divergences": 1,
+        "divergence_rate": 0.0001,
+        "rhat_max": 1.0055,
+        "ess_bulk_min": 988,
         "passed": true
       }
     },
     "34.1.phillips": {
       "n_items": 12,
-      "rmse": 0.742,
-      "mean_signed_error": -0.099,
+      "rmse": 0.736,
+      "mean_signed_error": -0.104,
       "spearman": 0.83,
       "coverage90": 1.0,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 17,
-        "divergence_rate": 0.0021,
-        "rhat_max": 1.0052,
-        "ess_bulk_min": 1462,
+        "divergences": 6,
+        "divergence_rate": 0.0008,
+        "rhat_max": 1.006,
+        "ess_bulk_min": 1014,
         "passed": true
       }
     },
     "34.3.heycock": {
       "n_items": 12,
-      "rmse": 1.31,
-      "mean_signed_error": -0.216,
+      "rmse": 1.309,
+      "mean_signed_error": -0.211,
       "spearman": 0.657,
       "coverage90": 0.833,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 0,
-        "divergence_rate": 0.0,
-        "rhat_max": 1.0044,
-        "ess_bulk_min": 991,
+        "divergences": 1,
+        "divergence_rate": 0.0001,
+        "rhat_max": 1.0097,
+        "ess_bulk_min": 951,
         "passed": true
       }
     },
     "34.4.boskovic": {
       "n_items": 12,
-      "rmse": 0.742,
-      "mean_signed_error": 0.371,
+      "rmse": 0.736,
+      "mean_signed_error": 0.363,
       "spearman": 0.846,
       "coverage90": 1.0,
       "diagnostics_passed": true,
       "diagnostics": {
         "divergences": 0,
         "divergence_rate": 0.0,
-        "rhat_max": 1.0043,
-        "ess_bulk_min": 813,
+        "rhat_max": 1.005,
+        "ess_bulk_min": 910,
         "passed": true
       }
     },
     "41.3.Landau": {
       "n_items": 12,
-      "rmse": 1.15,
-      "mean_signed_error": 0.159,
+      "rmse": 1.152,
+      "mean_signed_error": 0.157,
       "spearman": 0.613,
       "coverage90": 0.917,
       "diagnostics_passed": true,
       "diagnostics": {
-        "divergences": 1,
-        "divergence_rate": 0.0001,
-        "rhat_max": 1.0056,
-        "ess_bulk_min": 1048,
+        "divergences": 0,
+        "divergence_rate": 0.0,
+        "rhat_max": 1.0039,
+        "ess_bulk_min": 1082,
         "passed": true
       }
     },
     "41.3.Vicente": {
       "n_items": 12,
-      "rmse": 0.689,
-      "mean_signed_error": -0.126,
+      "rmse": 0.685,
+      "mean_signed_error": -0.128,
       "spearman": 0.881,
       "coverage90": 1.0,
       "diagnostics_passed": true,
       "diagnostics": {
         "divergences": 2,
         "divergence_rate": 0.0003,
-        "rhat_max": 1.0057,
-        "ess_bulk_min": 1011,
+        "rhat_max": 1.0039,
+        "ess_bulk_min": 947,
         "passed": true
       }
     }
@@ -2932,12 +4280,164 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
     "41.3.Landau",
     "41.3.Vicente"
   ],
-  "pooled_spearman": 0.742,
+  "pooled_spearman_descriptive": 0.742,
   "pooled_spearman_cluster_boot_lower90": 0.654,
-  "mean_spearman": 0.697,
-  "mean_rmse": 0.994,
-  "mean_coverage90": 0.933,
-  "all_diagnostics_passed": true,
+  "between_family_spearman": 0.406,
+  "within_family_spearman_min": -0.028,
+  "frac_families_within_spearman_gt_0.3": 0.9,
+  "sd_observed_item_means": 1.532,
+  "mean_spearman": 0.687,
+  "mean_rmse": 0.992,
+  "mean_coverage90": 0.926,
+  "all_diagnostics_passed": false,
+  "input_hashes": {
+    "items": "f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c",
+    "human": "5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec",
+    "measurements": "1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a"
+  },
+  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86"
+}
+
+{
+  "marginal_band": [
+    3.0,
+    5.0
+  ],
+  "cells": {
+    "claude-opus-4.6-agy/prompt_scalar_batch20": {
+      "n_items": 120,
+      "r_all": 0.834,
+      "r_marginal_band": 0.397,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.935,
+      "r_outside_band_n": 73
+    },
+    "gemma3:12b/prompt_scalar": {
+      "n_items": 120,
+      "r_all": 0.745,
+      "r_marginal_band": 0.275,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.852,
+      "r_outside_band_n": 73
+    },
+    "mistral-small:24b-instruct-2501-q4_K_M/prompt_scalar": {
+      "n_items": 120,
+      "r_all": 0.791,
+      "r_marginal_band": 0.236,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.866,
+      "r_outside_band_n": 73
+    },
+    "pythia-160m/logprob_mean": {
+      "n_items": 120,
+      "r_all": 0.366,
+      "r_marginal_band": -0.27,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.507,
+      "r_outside_band_n": 73
+    },
+    "pythia-160m/logprob_sum": {
+      "n_items": 120,
+      "r_all": 0.156,
+      "r_marginal_band": 0.21,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.148,
+      "r_outside_band_n": 73
+    },
+    "pythia-160m/slor": {
+      "n_items": 120,
+      "r_all": 0.35,
+      "r_marginal_band": -0.179,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.505,
+      "r_outside_band_n": 73
+    },
+    "qwen3:8b/prompt_scalar": {
+      "n_items": 120,
+      "r_all": 0.724,
+      "r_marginal_band": 0.183,
+      "r_marginal_band_n": 47,
+      "r_outside_band": 0.851,
+      "r_outside_band_n": 73
+    }
+  },
+  "category_usage": {
+    "human": {
+      "1": 0.144,
+      "2": 0.131,
+      "3": 0.119,
+      "4": 0.135,
+      "5": 0.128,
+      "6": 0.127,
+      "7": 0.217
+    },
+    "claude-opus-4.6-agy/prompt_scalar_batch20": {
+      "usage": {
+        "1": 0.086,
+        "2": 0.231,
+        "3": 0.131,
+        "4": 0.05,
+        "5": 0.147,
+        "6": 0.125,
+        "7": 0.231
+      },
+      "categories_never_emitted": "none"
+    },
+    "gemma3:12b/prompt_scalar": {
+      "usage": {
+        "1": 0.078,
+        "2": 0.068,
+        "3": 0.274,
+        "4": 0.151,
+        "5": 0.067,
+        "6": 0.18,
+        "7": 0.183
+      },
+      "categories_never_emitted": "none"
+    },
+    "mistral-small:24b-instruct-2501-q4_K_M/prompt_scalar": {
+      "usage": {
+        "1": 0.03,
+        "2": 0.046,
+        "3": 0.225,
+        "4": 0.193,
+        "5": 0.206,
+        "6": 0.125,
+        "7": 0.176
+      },
+      "categories_never_emitted": "none"
+    },
+    "qwen3:8b/prompt_scalar": {
+      "usage": {
+        "1": 0.075,
+        "2": 0.218,
+        "3": 0.118,
+        "4": 0.083,
+        "5": 0.094,
+        "6": 0.311,
+        "7": 0.101
+      },
+      "categories_never_emitted": "none"
+    }
+  }
+}
+
+{
+  "tau_item_median": 2.043,
+  "omega_median_by_cell": {
+    "pythia-160m/slor": 0.34,
+    "qwen3:8b/prompt_scalar": 0.564
+  },
+  "qwen_pooled_scalar_item_mean_r_with_human": 0.724,
+  "posterior_sha256": "06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723"
+}
+{
+  "run_id": "6068b87c-5576-4a69-bebe-e6cc8f3cb75a",
+  "posterior_sha256": "06726af6d3afb019151aa7531a4d4127080c288906774fb230e01f9889731723",
+  "stan_sha256": "969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86",
+  "code_commit": "62191e84ff1b9e468dad770a428efcdc3d24d235",
+  "n_items_criterion": 120,
+  "n_items_total": 120,
   "input_hashes": {
     "items": "f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c",
     "human": "5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec",
@@ -2947,631 +4447,235 @@ provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
 
 ```
 
-### warrant.yaml (the emitted certificate)
-
-```yaml
-generated: '2026-08-27T15:53:15'
-run_dir: runs/pilot
-run_id: 2868417c-3344-40c5-9f5f-bdd7f1af8407
-posterior_sha256: 80db0630980a5a751e45c033267c6c3fb8e07a1aea262d1461fd0973e3c69779
-estimand:
-  target: mean 7-point Likert acceptability rating per decontextualized sentence
-  population: the participant population of Sprouse, Schütze & Almeida (2013), Lingua
-    (Linguistic Inquiry 2001-2010 random-sample judgment study); no demographic claims
-    beyond their sampling are made or tested
-  response_scale: 1-7 Likert, decontextualized written sentences
-domain:
-  construction_families:
-  - 32.1.martin
-  - 32.3.Culicover
-  - 32.3.fanselow
-  - 33.4.neeleman
-  - 34.1.fox
-  - 34.1.phillips
-  - 34.3.heycock
-  - 34.4.boskovic
-  - 41.3.Landau
-  - 41.3.Vicente
-  n_items_total: 120
-  n_items_with_human_criterion: 120
-  item_source: Sprouse-Schütze-Almeida 2013 LI materials, pilot subset
-  language: English (US)
-  register: constructed linguistic example sentences
-  families: 10 LI source papers, 12 items each (6 starred / 6 good)
-instruments:
-- cell: pythia-160m/slor
-  reliability_new_family_median: 0.362
-  reliability_new_family_80:
-  - 0.041
-  - 0.678
-  reliability_by_family:
-    32.1.martin: 0.368
-    32.3.Culicover: 0.189
-    32.3.fanselow: 0.388
-    33.4.neeleman: 0.538
-    34.1.fox: 0.089
-    34.1.phillips: 0.564
-    34.3.heycock: 0.296
-    34.4.boskovic: 0.375
-    41.3.Landau: 0.167
-    41.3.Vicente: 0.569
-  global_slope_signal_ratio_median: 0.347
-  alpha_standardized_median: 0.013
-  standardization:
-    mean: 1.1467543535215112
-    sd: 1.201321652494467
-- cell: qwen3:8b/prompt_scalar
-  reliability_new_family_median: 0.538
-  reliability_new_family_80:
-  - 0.393
-  - 0.648
-  reliability_by_family:
-    32.1.martin: 0.552
-    32.3.Culicover: 0.538
-    32.3.fanselow: 0.513
-    33.4.neeleman: 0.516
-    34.1.fox: 0.504
-    34.1.phillips: 0.557
-    34.3.heycock: 0.538
-    34.4.boskovic: 0.566
-    41.3.Landau: 0.511
-    41.3.Vicente: 0.575
-  global_slope_signal_ratio_median: 0.538
-  alpha_standardized_median: -0.006
-  standardization:
-    mean: 4.241666666666666
-    sd: 1.9625958339422325
-evidence:
-  run:
-    run_id: 2868417c-3344-40c5-9f5f-bdd7f1af8407
-    posterior_sha256: 80db0630980a5a751e45c033267c6c3fb8e07a1aea262d1461fd0973e3c69779
-    stan_sha256: 969366aab7300808e48e21cdc948513fbebd440ffe8673b20d96ee0bfe083b86
-    code_commit: f13c22b8ba8703f0c109bd2e0616fb4f376249b4
-    n_items_criterion: 120
-    n_items_total: 120
-    input_hashes:
-      items: f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c
-      human: 5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec
-      measurements: 1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a
-  diagnostics:
-    divergences: 2
-    divergence_rate: 0.0003
-    rhat_max: 1.0032
-    ess_bulk_min: 708
-    passed: true
-  fake_data_recovery:
-    theta_90ci_coverage: 0.875
-    theta_post_mean_corr_truth: 0.961
-    beta_within_95ci: true
-    beta_post_mean:
-    - 0.27
-    - 0.453
-    - 0.368
-    beta_truth:
-    - 0.312
-    - 0.421
-    - 0.359
-    tau_item_within_95ci: true
-    tau_item_post_median:
-    - 1.126
-    tau_a_within_95ci: true
-    tau_a_post_median:
-    - 0.081
-    - 0.115
-    - 0.121
-    tau_b_within_95ci: true
-    tau_b_post_median:
-    - 0.099
-    - 0.139
-    - 0.147
-    reliability_max_abs_err: 0.08
-    reliability_truth:
-    - 0.271
-    - 0.529
-    - 0.481
-    passed: true
-    diagnostics:
-      divergences: 0
-      divergence_rate: 0.0
-      rhat_max: 1.0046
-      ess_bulk_min: 598
-      passed: true
-  sbc:
-    R: 100
-    n_failed_fits: 0
-    n_diag_failed: 19
-    n_thin: 63
-    params:
-      tau_constr:
-        chi2: 1.08
-        p_uniform_approx: 0.9808
-        rank_hist:
-        - 16
-        - 16
-        - 12
-        - 15
-        - 13
-        - 13
-        - 15
-      tau_item:
-        chi2: 1.78
-        p_uniform_approx: 0.938
-        rank_hist:
-        - 12
-        - 17
-        - 14
-        - 17
-        - 14
-        - 12
-        - 14
-      sigma_u:
-        chi2: 1.36
-        p_uniform_approx: 0.9668
-        rank_hist:
-        - 11
-        - 15
-        - 16
-        - 16
-        - 15
-        - 14
-        - 13
-      beta[1]:
-        chi2: 2.2
-        p_uniform_approx: 0.9005
-        rank_hist:
-        - 14
-        - 18
-        - 13
-        - 13
-        - 11
-        - 15
-        - 16
-      beta[2]:
-        chi2: 7.24
-        p_uniform_approx: 0.2987
-        rank_hist:
-        - 18
-        - 10
-        - 11
-        - 21
-        - 11
-        - 16
-        - 13
-      sigma_s[1]:
-        chi2: 1.5
-        p_uniform_approx: 0.9582
-        rank_hist:
-        - 14
-        - 11
-        - 16
-        - 14
-        - 13
-        - 16
-        - 16
-      sigma_s[2]:
-        chi2: 12.84
-        p_uniform_approx: 0.0453
-        rank_hist:
-        - 25
-        - 11
-        - 18
-        - 14
-        - 9
-        - 11
-        - 12
-    passed: true
-  loco_transfer:
-    target: same participants, new items
-    per_family:
-      32.1.martin:
-        n_items: 12
-        rmse: 0.847
-        mean_signed_error: -0.467
-        spearman: 0.884
-        coverage90: 0.917
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 5
-          divergence_rate: 0.0006
-          rhat_max: 1.006
-          ess_bulk_min: 1248
-          passed: true
-      32.3.Culicover:
-        n_items: 12
-        rmse: 0.862
-        mean_signed_error: -0.016
-        spearman: 0.546
-        coverage90: 1.0
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 4
-          divergence_rate: 0.0005
-          rhat_max: 1.0096
-          ess_bulk_min: 799
-          passed: true
-      32.3.fanselow:
-        n_items: 12
-        rmse: 1.145
-        mean_signed_error: 0.481
-        spearman: 0.951
-        coverage90: 0.917
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 0
-          divergence_rate: 0.0
-          rhat_max: 1.0027
-          ess_bulk_min: 1449
-          passed: true
-      33.4.neeleman:
-        n_items: 12
-        rmse: 1.003
-        mean_signed_error: 0.344
-        spearman: 0.789
-        coverage90: 0.917
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 3
-          divergence_rate: 0.0004
-          rhat_max: 1.0067
-          ess_bulk_min: 1243
-          passed: true
-      34.1.fox:
-        n_items: 12
-        rmse: 1.452
-        mean_signed_error: -0.178
-        spearman: -0.028
-        coverage90: 0.833
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 2
-          divergence_rate: 0.0003
-          rhat_max: 1.0043
-          ess_bulk_min: 963
-          passed: true
-      34.1.phillips:
-        n_items: 12
-        rmse: 0.742
-        mean_signed_error: -0.099
-        spearman: 0.83
-        coverage90: 1.0
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 17
-          divergence_rate: 0.0021
-          rhat_max: 1.0052
-          ess_bulk_min: 1462
-          passed: true
-      34.3.heycock:
-        n_items: 12
-        rmse: 1.31
-        mean_signed_error: -0.216
-        spearman: 0.657
-        coverage90: 0.833
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 0
-          divergence_rate: 0.0
-          rhat_max: 1.0044
-          ess_bulk_min: 991
-          passed: true
-      34.4.boskovic:
-        n_items: 12
-        rmse: 0.742
-        mean_signed_error: 0.371
-        spearman: 0.846
-        coverage90: 1.0
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 0
-          divergence_rate: 0.0
-          rhat_max: 1.0043
-          ess_bulk_min: 813
-          passed: true
-      41.3.Landau:
-        n_items: 12
-        rmse: 1.15
-        mean_signed_error: 0.159
-        spearman: 0.613
-        coverage90: 0.917
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 1
-          divergence_rate: 0.0001
-          rhat_max: 1.0056
-          ess_bulk_min: 1048
-          passed: true
-      41.3.Vicente:
-        n_items: 12
-        rmse: 0.689
-        mean_signed_error: -0.126
-        spearman: 0.881
-        coverage90: 1.0
-        diagnostics_passed: true
-        diagnostics:
-          divergences: 2
-          divergence_rate: 0.0003
-          rhat_max: 1.0057
-          ess_bulk_min: 1011
-          passed: true
-    n_families: 10
-    families_tested:
-    - 32.1.martin
-    - 32.3.Culicover
-    - 32.3.fanselow
-    - 33.4.neeleman
-    - 34.1.fox
-    - 34.1.phillips
-    - 34.3.heycock
-    - 34.4.boskovic
-    - 41.3.Landau
-    - 41.3.Vicente
-    pooled_spearman: 0.742
-    pooled_spearman_cluster_boot_lower90: 0.654
-    mean_spearman: 0.697
-    mean_rmse: 0.994
-    mean_coverage90: 0.933
-    all_diagnostics_passed: true
-    input_hashes:
-      items: f3ad1649032fd98a4525ed05de13880afd29cced8d792af34a3aa73c2fc6520c
-      human: 5eaf0541ea4c5f15bb7d6142e5e93585db6b71251c35946d4816eb6c9fc64eec
-      measurements: 1041de8980b9f884c22f04a7b6b5c3112cb2e6afd7a63a1515b1b36b5b5b7f9a
-  loco_binding: bound
-  ppc:
-    n_sims: 1000
-    families:
-    - 32.1.martin
-    - 32.3.Culicover
-    - 32.3.fanselow
-    - 33.4.neeleman
-    - 34.1.fox
-    - 34.1.phillips
-    - 34.3.heycock
-    - 34.4.boskovic
-    - 41.3.Landau
-    - 41.3.Vicente
-    posterior_sha256: 80db0630980a5a751e45c033267c6c3fb8e07a1aea262d1461fd0973e3c69779
-    conditional:
-      family_spread_ppp:
-        32.1.martin: 0.99
-        32.3.Culicover: 0.634
-        32.3.fanselow: 0.246
-        33.4.neeleman: 0.528
-        34.1.fox: 0.994
-        34.1.phillips: 0.788
-        34.3.heycock: 0.772
-        34.4.boskovic: 0.392
-        41.3.Landau: 0.82
-        41.3.Vicente: 0.858
-      family_spread_ppp_min: 0.246
-      within_item_sd_global_ppp: 0.754
-      within_item_sd_family_ppp_min: 0.02
-      category_usage_ppp: 1.0
-      passed: true
-    marginal:
-      family_spread_ppp:
-        32.1.martin: 0.926
-        32.3.Culicover: 0.528
-        32.3.fanselow: 0.186
-        33.4.neeleman: 0.44
-        34.1.fox: 0.906
-        34.1.phillips: 0.954
-        34.3.heycock: 0.768
-        34.4.boskovic: 0.486
-        41.3.Landau: 0.812
-        41.3.Vicente: 0.922
-      family_spread_ppp_min: 0.186
-      within_item_sd_global_ppp: 0.752
-      within_item_sd_family_ppp_min: 0.026
-      category_usage_ppp: 1.0
-      passed: true
-    instrument_residual_flags:
-    - cell: pythia-160m/slor
-      family: 32.1.martin
-      z: 8.56
-    - cell: pythia-160m/slor
-      family: 32.3.Culicover
-      z: 9.22
-    - cell: pythia-160m/slor
-      family: 32.3.fanselow
-      z: 9.67
-    - cell: pythia-160m/slor
-      family: 33.4.neeleman
-      z: 7.38
-    - cell: pythia-160m/slor
-      family: 34.1.fox
-      z: 9.09
-    - cell: pythia-160m/slor
-      family: 34.1.phillips
-      z: 8.64
-    - cell: pythia-160m/slor
-      family: 34.3.heycock
-      z: 7.37
-    - cell: pythia-160m/slor
-      family: 34.4.boskovic
-      z: 8.95
-    - cell: pythia-160m/slor
-      family: 41.3.Landau
-      z: 8.82
-    - cell: pythia-160m/slor
-      family: 41.3.Vicente
-      z: 7.04
-    - cell: qwen3:8b/prompt_scalar
-      family: 32.1.martin
-      z: 130.22
-    - cell: qwen3:8b/prompt_scalar
-      family: 32.3.Culicover
-      z: 126.4
-    - cell: qwen3:8b/prompt_scalar
-      family: 32.3.fanselow
-      z: 106.4
-    - cell: qwen3:8b/prompt_scalar
-      family: 33.4.neeleman
-      z: 138.65
-    - cell: qwen3:8b/prompt_scalar
-      family: 34.1.fox
-      z: 154.5
-    - cell: qwen3:8b/prompt_scalar
-      family: 34.1.phillips
-      z: 128.28
-    - cell: qwen3:8b/prompt_scalar
-      family: 34.3.heycock
-      z: 140.16
-    - cell: qwen3:8b/prompt_scalar
-      family: 34.4.boskovic
-      z: 146.1
-    - cell: qwen3:8b/prompt_scalar
-      family: 41.3.Landau
-      z: 151.41
-    - cell: qwen3:8b/prompt_scalar
-      family: 41.3.Vicente
-      z: 129.85
-    passed: true
-  ppc_binding: bound
-  multiverse_spread:
-    mean_per_item_sd_across_cells: 0.627
-    n_items: 120
-    n_cells: 2
-  prompt_invariance: assessed descriptively at the grid level; paraphrases enter the
-    fit as one instrument, so no model-based invariance statistic exists in this fit
-  human_split_half: 0.857 (mean of 200 random participant splits, 120 items; Spearman-Brown
-    corrected 0.923; computed from data/pilot_human.csv)
-  contamination:
-    status: suspect
-    reason: Sprouse-Schutze-Almeida LI materials are drawn from Linguistic Inquiry
-      articles (2001-2010) and the dataset has been publicly posted since 2013; presence
-      in LLM pretraining corpora cannot be excluded for either instrument.
-  instrument_nonresponse:
-    qwen3:8b/prompt_binary: 0.0
-    qwen3:8b/prompt_scalar: 0.0
-  flagged_cells: none
-  generalization_axes:
-    tested:
-    - construction_family (LOCO-CV, purposive family sample; descriptive over the
-      families tested)
-    untested:
-    - population
-    - register
-    - language
-    - item_source
-    - time
-    - model_version (beyond drift sentinels)
-  threshold_status: pre-registered decision defaults; not yet estimand-specific loss
-    analyses
-licensed_claims:
-  screening: full ladder passed and cell qwen3:8b/prompt_scalar new-family predictive
-    reliability median 0.54 > 0.5 with q10 0.39 > 0.35
-refused_claims:
-  ranking: 'contamination cap: item source not assessed clean; contamination inflates
-    the held-out rank statistic itself (LOCO rewards it)'
-  aggregate_estimation: refused because ranking is not granted
-  effect_reproduction: 'not yet tested: requires matched experimental contrasts'
-  distributional_claims: no participant-level validation of variance structure
-  population_transfer: 'refused: the v1 ladder contains no population-transfer test;
-    the estimand population defaults to the criterion sample''s own'
-  individual_simulation: 'refused permanently: an item-level instrument licenses no
-    individual-level human simulation'
-  mechanism_claims: 'refused permanently: the model estimates a linking function,
-    not a mechanism'
-residual_risks:
-- 'shared pretraining bias: local instruments share web-scale training data and can
-  share construction-specific error; a tight multiverse fan does not rule this out'
-- reliability quantities are fit- and item-set-specific; they go stale when the item
-  pool changes
-- thresholds are pre-registered defaults, not estimand-specific loss analyses
-
-```
-
 ---
 
-## PRIOR REVIEWS AND TRIAGE
+## PRIOR REVIEWS AND TRIAGE (from DECISIONS.md)
 
-### Review 1 (glm-5.3-flash)
+# DECISIONS — llm-acceptability-judgments
+<!-- SUMMARY: Decision log for the acceptometer build · status: active · updated: 2026-08-27 -->
 
-# Adversarial review: Acceptometer design spec
+2026-08-27 — Build the tool as a joint Bayesian measurement-error model (Stan),
+not a correlation pipeline. Origin: Brett asked what Gelman would say about the
+LLM-judge literature, then "how would he improve the tool", then "make it so".
+The design replaces the survey's validation checklist with one generative model
+plus explicit generalization tests.
 
-Top-line: the two most consequential problems are (A) the model assumes the linking function is invariant across construction families while selling cross-family projection as the product, and (B) contamination is recorded as metadata but has no statistical consequence, so the validation ladder actively rewards it. Details below, organized by your four buckets.
+2026-08-27 — Warrant is a first-class output, co-equal with the posterior.
+Brett's mid-build correction: "Gelman's posterior is important, but validity
+requires a warrant if we're going to generalize at all." Every fit emits
+warrant.yaml; LOCO-CV is the operationalized projectibility test; claim tiers
+are granted conservatively and refused by default when evidence is missing.
 
-## 1. Identification problems in the Stan spec (§ The statistical model)
+2026-08-27 — Scale convention in the Stan model: human-arm discrimination fixed
+at 1, within-family item sd fixed at 1, construction means sum-to-zero
+(sum_to_zero_vector, CmdStan 2.36). Theta is in human-logit units; instrument
+slopes are score-units per human logit. Reason: clean identification without
+sacrificing the cutpoints or instrument parameters.
 
-**1.1 The latent scale is identified by the prior, not the data — and the product lives exactly where the prior dominates.** [major]
-The human arm's ordered-logistic likelihood identifies theta only up to affine transformation; the "soft sum-to-zero, unit-scale" standardization resolves this *by prior*. That is legitimate, but note where it bites: for items with no human ratings ("The instrument use"), theta is identified by the instrument likelihood plus that prior. If a cell's sigma_m gets small (see 1.6 and 2.2), theta for unrated items collapses toward a rescaled LLM score with arbitrarily tight intervals. There is no structural floor on sigma_m, so "honestly widened uncertainty" is not a property of the model — it is a hope. Add an explicit noise floor or a contamination-aware downweighting.
+2026-08-27 — Minimal-pair deltas (mp_delta) are v1-descriptive only: computed
+by the grid, plotted, but not yet a likelihood term (a pair-delta measures
+theta_good minus theta_bad and needs its own likelihood block). Deferred, not
+forgotten.
 
-**1.2 The reliability formula is algebraically wrong as stated.** [major]
-`beta_m^2 var(theta) / (beta_m^2 var(theta) + sigma_m^2)` drops the `gamma_m' x_i` terms. With `s_im = alpha_m + beta_m·theta_i + gamma_m'·x_i + eps`, Var(s_im) includes `gamma'Σ_x γ + 2·beta·cov(theta, x)`. Length and frequency are almost certainly correlated with acceptability, so the omitted covariance term is not negligible. If you intend a *conditional* reliability (given x), say so and relabel it — it excludes systematic bias variance, which conflates reliability with validity in exactly the way the certificate shouldn't.
+2026-08-27 — SLOR's unigram term uses wordfreq Zipf values as a proxy for a
+model-based unigram LM, labeled as such in measurement meta. Reason: no corpus
+unigram model in v1; the label keeps the proxy honest.
 
-**1.3 Under the unit-scale constraint, `var(theta) ≈ 1`, making the formula mostly a beta/sigma ratio.** [moderate]
-The soft standardization pins var(theta) near 1, so including `var(theta)` in the formula is decorative. Consequence: the reported "posterior reliability" is a prior-scaled quantity, internal to this fit. The certificate's plan to benchmark it against "human split-half reliability" (§ The warrant certificate, evidence) compares a latent-scale ratio to a raw-score quantity — incoherent without a common scale (e.g., Spearman-Brown'd, same latent metric).
+2026-08-27 — The survey document (ChatGPT deep-research) is gitignored and
+excluded from any public repo: raw AI output. The tool code is publishable; the
+survey is a local resource only.
 
-**1.4 Binary cells have no sigma_m, so the replicate logic is incoherent.** [major]
-§ Elicitation multiverse grid says repeats "enter as replicate observations of s_im, informing sigma_m only." For `prompt_binary` and `answer_token_prob` there is no sigma_m in the likelihood — Bernoulli noise is fixed at 1 by construction. What do binary repeats inform? Nothing in the stated model. Either add an overdispersion parameter or restrict the replicate logic to continuous cells. Related: at temperature 0, binary outputs are (near-)deterministic, so the Bernoulli likelihood's aleatoric noise is pure model fiction for those cells; and `prompt_scalar` (integers 1–7, bounded) and `answer_token_prob` (∈ [0,1]) modeled as *normal* outcomes is the wrong likelihood — use ordered-logistic with its own cutpoints and a logit transform respectively.
+2026-08-27 — Local-first instruments (Pythia logprobs, Ollama chat judges); API
+adapters stubbed and off by default. Reason: free, reproducible, versionable;
+API elicitation is a deliberate decision with a drift plan, not a default.
 
-**1.5 The multiverse fan does not exist in the joint model.** [moderate]
-"Multiverse spread: per item, the spread of theta posteriors across elicitation cells" (§ Validation ladder, 4) is undefined: the joint model has *one* theta per item. Computing a fan requires per-cell (or leave-one-cell-out) refits, which is a different, undocumented pipeline whose thetas are no longer pooled. As specified, this artifact cannot be produced from the stated model.
+2026-08-27 — agy (Gemini 3.1 Pro High) design-review probe discarded: it
+reviewed a different document than the one supplied (described DAG tests and an
+`hpc_boundary()` API that appear nowhere in DESIGN.md). Consistent with the
+recorded agy fabrication risk; not retried, quota preserved.
 
-**1.6 Weakly separated variance components.** [minor]
-With Sprouse-scale data (~8–12 items per paradigm, limited number of paradigms), `tau_item` vs `tau_constr` are weakly separately identified; the priors do real work, and since var(theta) enters reliability, that work propagates into certificate fields. Similarly, `normal(0,2)` on ordered cutpoints with standardized theta puts awkward prior mass on extreme category configurations; fine, but it's a choice that should appear in a prior-sensitivity check (which the ladder omits entirely).
+2026-08-27 — LOCO fits run at 1000/1000 iterations (vs 750/750 default fits)
+after a held-out-family fit showed marginal mixing (R-hat 1.013 > 1.01 gate).
+The gate stays; the iterations move. (Superseded later the same day: defaults
+raised to 1000/1000, adapt_delta 0.95, after the freed latent scale needed
+more adaptation.)
 
-**1.7 `gamma_m` vs `beta_m` collinearity.** [moderate]
-If x_i (length, frequency) correlates with theta across items, beta_m and gamma_m are individually weakly identified even when predictions are fine. Reported per-instrument "bias summaries" and reliability will be unstable; the certificate presents them as instrument properties when they are fit-specific and item-set-specific.
+2026-08-27 — Within-family item sd (tau_item) freed; scale anchored by the
+ordered-logistic error variance instead. Reason: first real-data PPC (Sprouse
+LI pilot, 120 items, 1,519 ratings) failed with observed between-item spread
+1.53 vs replicated 1.33 [1.25, 1.41] and observed within-item SD 1.44 vs
+replicated 1.63 [1.57, 1.68]: fixing the sd at 1 compressed the latent scale
+and forced ordinal noise to compensate. With tau_item free the data estimates
+it at ~2.0 and the PPC passes (ppp .73 / .54). Recovery and SBC re-run and
+green after the change. This is the PPC gate doing precisely what it was
+built for on first contact with real data.
 
-## 2. Flaws in the validity/warrant logic
+2026-08-27 — Pilot design: 120 Sprouse LI items (10 paper-families x 12,
+6 starred / 6 good), all 1,519 available LS ratings from 304 participants;
+construction family = source paper (volume.issue.author). Sprouse
+participant-level data and derived files stay out of git (header requests
+contacting Sprouse for novel research; redistribution unclear).
 
-**2.1 The linking function is assumed family-invariant; the product assumes it.** [major — the central flaw]
-There is no family-level random effect in the instrument arm (no beta_mc, no family-specific linking deviations). Instrument residuals are i.i.d. by construction, but LLM scoring errors cluster by phenomenon (islands, binding, center-embedding systematically misjudged). For unrated items *within fitted families* this is tolerable; for items in *new* families — the regime the tool is explicitly sold for ("new constructions," § What this is) — the theta posterior excludes between-family linking uncertainty entirely. LOCO measures average transfer but cannot inject that uncertainty back into the intervals. "Honestly widened uncertainty" is therefore structurally false. Fix: random coefficients of the linking by family, or inflate unrated-item intervals by the between-family linking variance estimated from LOCO.
+2026-08-27 — Cells of one model+method enter the fit as ONE instrument.
+The first full pilot fit treated three scalar paraphrases (and three
+transforms of one Pythia forward pass) as independent witnesses; their
+correlated errors outvoted 1,519 human ratings (qwen "reliability" .93, PPC
+failure, posterior tension). Paraphrases and repeats are repeated
+measurements of one instrument; Pythia enters via SLOR only; binary cells
+stay descriptive in v1 (no-overdispersion Bernoulli is misspecified for
+near-deterministic repeats, b_b exploded to |11| under a N(0,1) prior).
 
-**2.2 Contamination is recorded, never used.** [major]
-BLiMP minimal pairs are public and post-training-cutoff-verifiable; published paradigms are in Pythia/qwen/gemma pretraining corpora with high probability. Contamination produces exactly the degenerate attractor from 1.1: sigma_m shrinks, beta inflates, reliability looks great, unrated-item thetas become confident rescaled LLM scores. Worse, **LOCO rewards contamination**: the held-out family is published, hence likely in training data, so transfer looks excellent *because of* the contaminant. The certificate lists "contamination assessment" (§ The warrant certificate) but there is no rule forcing refusal of projection/effect-size tiers for contaminated cells. A recorded caveat is not a warrant constraint.
+2026-08-27 — Reflection mode handled by data-informed initialization plus a
+zero-avoiding gamma(2,1) prior on tau_item. The joint posterior has a
+locally-stable mirror (slopes and latent orientation jointly flipped) that
+captured 1-in-4 randomly-initialized chains; escaping requires all thetas to
+cross the valley at once, which HMC will not do. Chains now start at the
+standardized human item means (basin selection, no posterior bias, no sign
+constraints anywhere; an anti-correlated instrument can still reach negative
+beta).
 
-**2.3 LOCO is one axis of generalization dressed as *the* projectibility test.** [major]
-LOCO tests transfer across construction families within one item source, one language, one register, one elicitation protocol, one time point. The intro claims the warrant covers "new constructions, new items, new model versions." New items within validated families, new item sources, and new populations are untested by anything in the ladder. Also: construction families are a purposive, historically-theory-driven sample, not an exchangeable draw from a superpopulation — so `tau_constr` and LOCO coverage are descriptive over the sampled families, not inferential over "constructions" in general. The certificate's language should say this; currently "LOCO-CV … This is the projectibility test" (§ Validation ladder, 4) overstates by exactly the move the document's own philosophy forbids.
+2026-08-27 — Second external review (GPT-family, via Brett) triaged and
+largely adopted; it reviewed packet rev 2 but most findings held against rev
+3 code. Adopted: (1) DESIGN scale-convention text rewritten to match the
+implemented identification (link-anchored scale; sum-to-zero family location;
+prior-anchored absolute location; design-dependent variance separation);
+(2) held-out/new families excluded from the sum-to-zero vector, independent
+normal(0, tau_constr) predictive effects (the constrained vector leaks
+finite-set centering information to a "new" family); (3) tau_item, tau_a,
+tau_b, omega added to the diagnostics core and to fake-data recovery truth
+and gates; (4) warrant enforces the full ladder literally: recovery + SBC
+prerequisites, PPC required (not merely not-failed) for aggregate, nonresponse
+flags exclude cells, LOCO must cover all families with fold diagnostics
+passed, and all evidence must be hash-bound to the posterior via run.json;
+(5) reliability gate switched to new-family predictive reliability (fresh
+slope-deviation draw per posterior draw), per-family reliabilities reported,
+global ratio demoted to non-warrant status; (6) contamination cap extended to
+ranking (LOCO rewards contamination); uncertainty-aware gates (median + q10;
+pooled Spearman + family-cluster bootstrap lower bound); (7) tie-aware
+Spearman (average ranks) + pooled out-of-fold statistic; (8) LOCO target
+stated as same-participants-new-items, predictions use raters' posterior
+effects; (9) PPC: n_sims 1000, conditional AND marginal participant modes,
+per-family ppp vectors gated on minima, proper predictive reference for
+category usage, instrument-arm residual flags (warn-only); (10) LOCO
+standardization training-only (was transductive); (11) SBC diagnostics-aware
+with a 20% failure cap, rerun at R=100; (12) SLOR made unit-consistent
+(per-word, first-word skip aligned with no-BOS path; cached pilot cell
+re-scored) and HF provenance now records the checkpoint commit hash;
+(13) alpha renamed alpha_standardized_median. Adapted rather than adopted:
+full decision-theoretic thresholds (deferred: needs estimand-specific loss),
+zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
+"no real-data LOCO/warrant exists" — the reviewer saw rev 2; both exist in
+rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
+population-transfer test, temporal drift evidence.
 
-**2.4 Estimand population vs criterion sample is an unbridged gap.** [major]
-The estimand example says "US-English adult non-linguists" (§ The warrant certificate). The criterion candidates (Sprouse/Schütze/Almeida; MORCELA) have their own sampling frames. Nothing in the ladder tests participant-population transfer or measurement invariance across rater groups; the model assumes exchangeable participants via `u_p ~ normal(0, sigma_p)` only. The certificate records both populations but the warrant logic contains no step connecting them — every downstream claim silently rests on an untested population-transfer assumption. Either declare the estimand to be the criterion population, or add a generalization test.
+2026-08-27 — Cross-model marginal-band result (five judge families; Opus 4.6
+elicited via agy with a quota-safe batched protocol, 18 calls, 0 parse
+failures; batch protocol recorded in the cell identity): aggregate r with
+human item means rises with capability (.35 pythia -> .72 qwen8b -> .74
+gemma12b -> .79 mistral24b -> .83 opus4.6, human split-half ceiling .857) and
+the contested-band r rises too but lags everywhere (-.18 -> .18 -> .28 ->
+.24 -> .40, vs .85-.94 outside the band). The middle-band deficit is
+class-wide and scale-mitigated, not solved; Opus also avoids category 4
+(5% vs humans' 13.5%). Copilot CLI probed: accepts claude-sonnet-4.6, no
+Opus tier, so agy is the Opus route.
 
-**2.5 No decision thresholds mapping evidence to tiers.** [moderate]
-`licensed_claims` are "explicitly granted or refused with the reason," but no pre-registered quantitative criteria exist (e.g., screening licensed if LOCO RMSE < X·SD(human means), coverage within [a,b]). Without thresholds, "machine-readable" licensing is judgment wearing a YAML costume — precisely the discretion the certificate exists to remove.
+2026-08-27 — Final pipeline PPC verdict (post participant-style checks): the
+single failing discrepancy is participant-level category-usage entropy
+(ppp .000 conditional / .006 marginal); all family-level, item-level,
+category, and instrument-arm checks pass. Diagnosis: real raters have
+idiosyncratic scale-use styles the additive intercept cannot compress or
+expand — review 3's predicted misfit, caught by the check built for it.
+v1 keeps the conservative pre-commitment (any PPC failure blocks all
+deployment claims); rater-style modeling and a per-tier PPC consequence map
+are v2. LOCO binding hole closed the same hour: LOCO now stamps the Stan
+hash so a report generated under an older model refuses even with matching
+input hashes (the review-3 stale-evidence scenario, found live when the
+pre-is_new loco.json would have bound).
 
-**2.6 Tight-fan logic has a blind spot.** [moderate]
-"Tight fan = measurement" (§ Validation ladder, 4) fails under shared-mode bias: all local instruments are web-crawl-trained and can share nonlinear, construction-specific errors that the linear `gamma'x` terms don't absorb. All cells agree; theta is wrong; LOCO catches it only if the bias is family-specific *and* the held-out family exhibits it. The certificate should carry this as a permanent residual-risk caveat, not treat fan width as dispositive.
+2026-08-27 — Assurance machinery folded in from Brett's AI-safety papers
+(adversarial-pragmatics / delegation-assurance / evidentiary-assurance /
+ai-evaluation-kinds), at Brett's direction after the cross-reading: (1)
+frozen versioned threshold spec (src/acceptometer/thresholds.yaml + spec.py);
+diagnostics, SBC, PPC, and warrant gates all read it, and certificates cite
+spec_version + SHA (delegation-assurance's frozen-specification practice);
+(2) the certificate is now a LICENCE WITH A LIFE-CYCLE (ai-evaluation-kinds):
+status, issuer, expiry conditions (instrument/item/model change), erosion
+conditions (Goodhart against the gate statistics), defeat/supersession, and
+a contestation route; (3) each licensed claim carries the four
+projective-claim blocks (declaration / projectibility profile / warrant /
+defeaters), with the profile supplied by the analyst in estimand.yaml as a
+stated HYPOTHESIS, never fused with the warrant (the shared claim-types
+protocol); (4) refusals are typed with remedies per evidentiary-assurance's
+verdict separation: unevaluable / shortfall / affirmative_failure / vitiated
+/ structural; (5) answerability: issued_by named, contestation route stated;
+Robodebt residual risk recorded (binding integrity is not construct
+validity); (6) response-style evidence module (scripts/response_evidence.py)
+from adversarial-pragmatics' minority-class and label-omission lessons.
 
-**2.7 Drift monitoring underspecified.** [moderate]
-(§ Validation ladder, 5.) (a) Sentinels bound drift on sentinels; drift can be construction-non-uniform. (b) For a new model version, alpha/beta/sigma for the new epoch are estimated from sentinel re-scores only — a small, biased item set — yet the certificate's drift bounds and any re-licensed claims inherit that narrow basis; nothing says new-instrument licenses are restricted to sentinel-covered domain. (c) "Drift bounds" have no statistical definition (posterior of what function, with what uncertainty, propagated from sentinel theta uncertainty?). (d) The design assumes version identity is observable; silent weight updates under a stable name break the epoch covariate (moot for v1 local models, but the architecture is being sold for API use).
+2026-08-27 — Marginal-stratum finding (first output of the new evidence
+module): qwen's aggregate r = .72 with human item means collapses to r = .18
+on the 47 contested-band items (human mean in [3,5]) and rises to .85
+outside it; Pythia SLOR is -.18 in the band. The aggregate correlation is
+carried by the easy items. Category usage: humans spread across the scale
+(peak at 7); qwen hedges (peaks at 2 and 6, avoids extremes and middle).
+Consequence for use: the instrument profile fits triage (screen clear cases,
+spend humans on the middle band, which is what design.py allocates), and any
+marginal-item claim is unsupported. Reported under descriptive_findings.
 
-## 3. Failure modes the validation ladder misses
+2026-08-27 — SBC per-fit sanity checks moved to 4 chains (500/500) after the
+2-chain run failed the tightened 10% cap with 19 scattered (non-concentrated)
+diagnostic failures, consistent with 2-chain R-hat noise rather than a
+geometry pathology. The pipeline's stop-at-first-failed-gate behavior worked
+as designed.
 
-**3.1 No PPC gate at the real-fit stage.** [major]
-Step 3 is "Human criterion data + real elicitation runs" with no stated acceptance criteria. The model section touts PPCs on "variance and disagreement structure," but the ladder has no step where PPC failure blocks licensing. Since the human arm (theta + additive u_p, single kappa, no item discrimination, no rater cutpoint heterogeneity) *cannot represent* family-varying disagreement or differential scale use (raters using only 3–5 aren't shifted versions of raters using 1–7), those PPCs will fail — and the misfit will flow silently into licensed claims. Either add rater cutpoints/item discrimination or pre-commit to which PPC failures refuse which tiers.
+2026-08-27 — Third external review (GPT-family, via Brett) triaged; verdict
+accepted: the screening grant is withdrawn and the pilot certificate licenses
+no deployment tier (descriptive findings only). Adopted: (1) reliability_new
+was sign-blind (squaring launders reversed slopes into signal) and used
+pooled between+within theta variance; replaced with P(new-family slope
+positive) plus a DIRECTIONAL within-family-variance reliability in which
+negative-slope draws count as zero; family-specific reliabilities likewise
+sign-aware and within-family; (2) contamination caps screening too, for the
+same reason it caps ranking; (3) hash binding made real: the warrant
+RECOMPUTES posterior/Stan hashes and requires exact input-hash-map equality;
+recovery/SBC/newfam bind via Stan-source hash; (4) simulated new-family
+recovery (newfam_check) added as a ladder stage: under known truth the new
+branch shows within-family coverage 0.83 and rank recovery +.84/+.85 while
+family-location bias (+0.19/-0.33) empirically displays the
+prior-identification limit; (5) instrument-arm PPC was broken (raw scores vs
+standardized predictions, omega omitted; z of 106-155 was the signature) —
+rebuilt as a posterior-predictive check on the fitted scale with all model
+terms, and GATED; (6) pooled LOCO Spearman demoted to descriptive (it
+conflates between-family separation with within-family ordering); claims
+split into within-family ranking, family location, aggregate; aggregate
+decoupled from ranking and given a sharpness gate (RMSE <= .75 x sd of
+observed means); (7) family location for unanchored families refused
+STRUCTURALLY (delta-invariance: shifting a new family's mean and each cell's
+family intercept in compensation leaves the instrument likelihood unchanged);
+(8) exchangeability labeling on every new-family quantity (families are
+purposive; the fresh-deviation draw is a working extrapolation model);
+(9) mode_audit added (overdispersed starts, lp comparison across
+orientations) since same-basin agreement cannot rule out the mirror;
+diagnostics core extended to a_dev/b_dev/mu_new_raw/theta; (10) SBC excludes
+failed-diagnostic replications from rank histograms, records their prior
+locations, cap tightened to 10%, tau_b and omega tracked; (11) SLOR no-BOS
+path eliminated via EOS-as-BOS fallback; (12) provenance (checkpoint commit,
+Ollama digest, dates) propagated into certificate instrument entries;
+posterior_summary.json added so report numbers are auditable; pilot script
+stops at first failed gate and deletes stale evidence. Adapted: prompt-level
+dependence noted as residual risk (nested prompt effects v2); participant
+response-style PPCs added (entropy, range) with item-by-participant residual
+checks deferred. Rejected: none of substance.
 
-**3.2 Instrument nonresponse.** [moderate]
-Prompted chat cells produce refusals and parse failures. Silent filtering is selection on an unmodeled mechanism, plausibly correlated with theta (refusals concentrate on odd content). Nothing in grid.py's described responsibilities or the model handles missingness.
-
-**3.3 Fake-data recovery validates computation, not the model.** [moderate]
-"Simulate the full generative process… The pipeline is untrusted until it passes" is correct as far as it goes, but simulate.py "mirroring the Stan model" can never detect model inadequacy — and real data has features the simulation won't (deterministic temp-0 outputs, bounded scales, ceiling effects, contamination). Passing the ladder is necessary, not licensing. The text flirts with the stronger reading; make the scope explicit.
-
-**3.4 SBC-lite misses the product quantities.** [moderate]
-Ranks are checked for beta_m, sigma_m, tau_constr — internals. The things being sold are the theta posterior for unrated items and the derived reliability ratio; neither is in the SBC set, and neither is in step 1's "parameter recovery" unless you deliberately hold out items' human data and check unrated-item coverage. Also, ~50 fits gives essentially no tail resolution on rank histograms; and there is no prior-sensitivity stage anywhere, despite priors carrying identification (see 1.1).
-
-**3.5 Adaptive budget feedback.** [minor]
-design.py ranks by posterior sd(theta). If selection uses only instrument data already in the model, ignorability holds; if it touches human pilot data outside the likelihood, it doesn't. State which.
-
-**3.6 LOCO evaluation target underspecified.** [moderate]
-"Predict its human item means… record transfer RMSE, interval coverage" — coverage of which interval: latent theta, predictive mean rating, or the observed mean? The observed mean carries ordinal sampling noise that must be included or coverage is miscalibrated by construction. Also, evaluating means while the certificate sells a "distributional claims" tier (§ The warrant certificate) leaves that tier untested by the only generalization test.
-
-## 4. Statistically wrong or overclaimed (specific lines)
-
-- **Reliability formula** (§ The statistical model): drops gamma/cov(x,θ) terms — wrong unless x ⊥ θ (see 1.2); inapplicable to binary cells (1.4).
-- **"repeats … informing sigma_m only"** (§ Elicitation multiverse grid): incoherent for binary cells; and the temp-0 score enters the fit while sigma_m is estimated from default-temperature repeats — a noise estimate from a different sampling regime than the score it's attached to.
-- **"Tight fan = measurement"** (§ Validation ladder, 4): false under shared pretraining bias (2.6).
-- **"This is the projectibility test"** (§ Validation ladder, 4): single-axis test over a purposive family sample; cannot support the intro's three-way generalization claim (2.3).
-- **"honestly widened uncertainty"** (§ The instrument use): not structurally guaranteed; degenerate under contamination (1.1, 2.2).
-- **"linking uncertainty propagates into every downstream claim"** (§ The statistical model, MORCELA paragraph): only if every downstream artifact is computed from the full joint posterior; certificate summaries and LOCO RMSEs are not.
-- **PPC claim on disagreement structure** (§ Human arm paragraph): the specified model cannot express item- or family-varying disagreement; the check will fail or the claim overstates capability (3.1).
-- **"posterior reliability" as a per-instrument certificate field** (§ The warrant certificate): it is item-set-, prior-, and fit-specific; stale the moment the item pool changes.
-
-Most load-bearing fixes, in order: (1) family-level random coefficients or variance inflation in the linking arm; (2) contamination rules with tier consequences plus a sigma_m floor; (3) a PPC/refusal gate at ladder step 3 tied to tiers; (4) pre-registered evidence→tier thresholds; (5) correct likelihoods for binary/scalar/probability cells with a coherent replicate story.
-
-
-### Triage of both reviews (from DECISIONS.md)
+2026-08-27 — Instrument-by-item error term (omega) added for replicated
+cells. Repeats average away draw noise but never the instrument's stable
+opinion about an item; without the term, replicated cells claim fictitious
+precision and drag theta off the human criterion (the PPC caught it).
+Identified only against replicate noise, so it is switched off for
+single-observation cells (redundant-ridge divergences otherwise). Effect on
+real data: qwen scalar conditional reliability .90 -> .54 with omega = .56;
+PPC now passes (ppp .86/.78). Recovery recovers omega to +-0.04; full ladder
+re-run green.
 
 2026-08-27 — ocx (glm-5.3-flash) adversarial review of DESIGN.md accepted in
 large part; model upgraded before any real-data fit. Changes: (a) family-level

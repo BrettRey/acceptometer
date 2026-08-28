@@ -1,105 +1,103 @@
-# Acceptometer pilot report: Sprouse LI items, local instruments
-<!-- SUMMARY: Real-data pilot of the warranted measurement pipeline after two external reviews; screening licensed, ranking refused on the contamination cap despite passing numbers · status: complete · updated: 2026-08-27 -->
+# Acceptometer pilot report: Sprouse LI items, six judge models
+<!-- SUMMARY: Final pilot: certificate descriptive_only (contamination + rater-entropy PPC), cross-model contested-band deficit measured across five families incl. Opus 4.6 · status: complete · updated: 2026-08-27 -->
 
 ## What ran
 
-120 items from the Sprouse, Schütze & Almeida (2013) Linguistic Inquiry
-judgment study (10 source-paper families, 6 starred / 6 good each), with all
-1,519 available participant-level 7-point ratings (304 participants, ~12.7
-ratings/item). Instruments, all local and free: Pythia-160m exact
-log-probability cells (SLOR entering the fit, unit-consistent per-word
-definition) and qwen3:8b prompted judgments (3 registered paraphrases x binary
-and 1-7 scalar x 3 repeats at temperature 0.7; 2,160 chat calls, zero parse
-failures, 11.5 minutes). One instrument per model+method enters the fit;
-paraphrases and repeats are repeated measurements.
+120 items from Sprouse, Schütze & Almeida (2013) (10 source-paper families,
+6 starred / 6 good each) with all 1,519 participant-level 7-point ratings
+(304 participants). Judges: Pythia-160m (exact log-probabilities), qwen3:8b,
+gemma3:12b, mistral-small:24b (local, single-item protocol, 3 paraphrases x 3
+repeats), and Claude Opus 4.6 via agy (batched-20 protocol, 3 passes, 18
+calls, 0 parse failures); glm-4.7-flash and qwen3.8:27b in flight. The joint
+Bayesian fit uses qwen3:8b + Pythia SLOR; the others are descriptive cells.
 
-Every stage ran behind its gate, and the warrant enforces the ladder
-literally: convergence diagnostics, fake-data recovery (including the freed
-scale and family-deviation hyperparameters), SBC (R=100, diagnostics-aware),
-posterior predictive checks in BOTH participant modes with per-family gates,
-and leave-one-construction-family-out transfer in which the held-out family
-is excluded from the training sum-to-zero vector and receives an independent
-predictive family effect. All evidence is hash-bound to the posterior it
-certifies.
+The full ladder ran gated, stop-at-first-failure: fake-data recovery PASSED;
+SBC (R=100, 4-chain, diagnostics-aware, failures excluded from ranks) PASSED;
+simulated new-family recovery PASSED (within-family coverage .83, rank
+recovery +.84/+.85, family-location bias reported as the empirical face of
+the prior-identification limit); fit diagnostics PASSED; posterior predictive
+checks FAILED on exactly one discrepancy: participant-level category-usage
+entropy (ppp .000/.006), the rater-style misfit review 3 predicted, caught by
+the check built for it. LOCO ran under the current model (held-out families
+outside the sum-to-zero vector): mean within-family Spearman .687, 90%
+coverage .926, between-family Spearman .41, fox still failing outright
+(-.03), one fold marginal (R-hat 1.013).
 
-## Headline numbers
+## The certificate (runs/pilot/warrant.yaml)
 
-| Quantity | Value |
-|---|---|
-| Human split-half reliability (item means, 200 splits) | r = .857 (Spearman-Brown .923) |
-| qwen3:8b pooled scalar, item-mean r with humans | .724 |
-| qwen3:8b new-family predictive reliability | .54 [80%: .39, .65]; by-family .50-.58 |
-| Pythia-160m SLOR new-family predictive reliability | .36 [80%: .04, .68]; by-family .09-.57 |
-| qwen instrument-by-item error (omega) | ~.56 latent-logit units |
-| PPC (conditional and marginal modes) | both passed |
-| LOCO pooled tie-aware Spearman (same raters, new items) | .742; family-cluster bootstrap lower-90 .654 |
-| LOCO mean 90% coverage of observed means | .933; RMSE .99 |
-| LOCO fold diagnostics | 10/10 clean at 2000/2000 iterations |
+**Licence status: `descriptive_only`.** All six evidence artifacts recompute-
+hash-bound. Every deployment claim refused, typed, with a remedy:
 
-Per-family LOCO is the projectibility story: nine of ten families transfer at
-Spearman .55-.95; one (34.1.fox) fails outright (-.03). Pythia's per-family
-reliability spread (.09-.57) shows an instrument whose validity does not
-project across families; qwen's (.50-.58) is family-stable on this domain.
+| claim | type | remedy |
+|---|---|---|
+| screening | affirmative_failure (PPC) | model rater-style heterogeneity; then the contamination cap still requires post-cutoff items |
+| ranking_within_family | affirmative_failure (PPC) | same |
+| aggregate_estimation | affirmative_failure (PPC) | same |
+| family_location_unanchored | structural | anchor items per new family, or within-family claims only |
+| effect_reproduction, population_transfer | unevaluable | build the v2 tests |
+| distributional_claims | affirmative_failure | rater-style modeling (v2) |
+| individual_simulation, mechanism_claims | structural | none: outside the design's claim space |
 
-## The warrant (runs/pilot/warrant.yaml)
+The certificate carries the licence life-cycle (expiry on instrument/item/
+model change; Goodhart-erosion clause; defeat and supersession; contestation
+route), the analyst's projectibility profiles as stated hypotheses, and the
+frozen threshold spec v1.0.0 by hash.
 
-Licensed: **screening only** — the full ladder passed and qwen's new-family
-predictive reliability clears (median .54 > .5, q10 .39 > .35).
+## The headline scientific finding: the contested-band deficit
 
-Refused: **ranking, on the contamination cap, despite passing numbers.** The
-pooled held-out Spearman (.742, lower-90 .654) would clear the pre-registered
-gate, but the LI materials are public since 2013 and contamination inflates
-exactly the held-out rank statistic (LOCO rewards it), so a suspect item
-source cannot license ranking. Also refused with reasons: aggregate
-estimation (hierarchically), effect reproduction, distributional claims,
-population transfer, individual simulation (permanent), mechanism claims
-(permanent). Residual risks recorded: shared pretraining bias; item-set
-specificity; thresholds are pre-registered defaults, not loss analyses.
+Correlations of judge item-means with human item-means, split at the
+contested band (human mean in [3, 5]; 47 of 120 items):
 
-Lifting the cap is a v2 experiment, not a rule change: a post-cutoff,
-never-published item set with fresh human norms.
+| judge | r all | r band | r outside |
+|---|---|---|---|
+| Claude Opus 4.6 (batched) | **.834** | **.397** | .935 |
+| mistral-small 24B | .79 | .24 | .87 |
+| gemma3 12B | .74 | .28 | .85 |
+| qwen3 8B | .72 | .18 | .85 |
+| Pythia-160m SLOR | .35 | -.18 | .51 |
+| *human split-half ceiling* | *.857* | | |
 
-## What external review and real data changed (all logged in DECISIONS.md)
+Aggregate performance rises with capability to ceiling-adjacent (Opus .834
+vs .857), and the band lags everywhere: the frontier model carries less than
+half its outside-band signal in the region where acceptability theory
+actually needs judgment. Opus also avoids the middle category harder than
+humans do (uses "4" 5% vs 13.5%) while hitting the extremes. The deficit is
+class-wide and scale-mitigated, not solved. Published aggregate correlations
+(r~.8) are real and are carried by the items nobody needed an instrument for.
 
-Review 1 (glm-5.3-flash, adversarial, pre-data): family-varying linking,
-noise floor, conditional-reliability relabel, single-temperature elicitation,
-observed-mean LOCO target, contamination caps, PPC gate.
+Consequent use profile: triage. Screen the clear cases, spend the human
+budget on the middle band (which is what design.py allocates); no marginal-
+item claim is supported for any tested judge.
 
-Real data (each caught by a gate): freed latent scale (tau_item ~ 2.0);
-one-instrument-per-model+method after correlated paraphrase cells outvoted
-the human criterion; reflection-mode handling (data-informed inits +
-zero-avoiding tau_item prior); instrument-by-item error, which repriced qwen
-from a fictitious .90 to an honest .54.
+## What the day's three external reviews and the gates changed
 
-Review 2 (GPT-family, via Brett): new-family effects outside the sum-to-zero
-vector; ladder enforcement with hash-bound evidence; new-family predictive
-reliability as the gate quantity (global ratio demoted); contamination cap
-extended to ranking; tie-aware pooled Spearman with cluster bootstrap;
-same-raters LOCO target; two-mode per-family PPC with a proper category-usage
-reference; training-only standardization; SLOR unit consistency; checkpoint
-provenance; expanded recovery and diagnostics gates.
-
-## Reading the numbers against the literature
-
-Published r = .8 human-LLM correlations (Qiu et al. 2024, ChatGPT) sit between
-this pilot's qwen3:8b (.72) and the human split-half ceiling (.857). The
-contribution is the decomposition and the certificate: how much is theta
-signal, how much is the instrument's stable per-item opinion, how transfer
-behaves family by family, and which claims the package does and does not
-license, with every number bound to the posterior it came from.
+Review 1 (glm-4.7-flash): family-varying linking, PPC gate, contamination
+caps, observed-mean LOCO target. Real data then forced: freed latent scale
+(tau_item ~ 2.0), one-instrument-per-model+method, reflection-mode handling,
+instrument-by-item error (reliability .90 -> .54 honest). Review 2
+(GPT-family): new-family effects outside the zero-sum vector, hash binding,
+predictive reliability, tie-aware pooled statistics. Review 3 (GPT-family):
+sign-aware directional reliability, contamination vitiates screening too,
+recomputed binding with model hashes, simulated new-family recovery,
+rebuilt gated instrument PPC, claim matrix with sharpness gate, structural
+refusal of unanchored family location. Assurance layer folded in from the
+AI-safety papers: licence life-cycle, projectibility profiles, typed
+refusals, frozen threshold spec, answerability. Full trail: DECISIONS.md.
 
 ## Caveats
 
-Single language, single (contamination-suspect) item source, constructed
-sentences, two instruments, one register, one date. The certificate lists the
-untested axes explicitly. v2 priorities, in value order: post-cutoff item set
-(tests aggregate estimation for real), ordered-logistic scalar arm,
-binary-arm overdispersion, rater-specific cutpoints, prior-sensitivity sweep,
-population-transfer test.
+One language, one contamination-suspect item source, constructed sentences,
+one register, one date; Opus used a batched protocol (recorded in its cell
+identity). The certificate lists untested axes. v2 priorities: post-cutoff
+item set (the only route to any deployment grant), rater-style modeling
+(clears the PPC), ordered-logistic scalar arm, binary overdispersion,
+per-tier PPC consequence map, population-transfer test.
 
 ## Artifacts
 
-`runs/pilot/`: posterior.nc, run.json (hashes), diagnostics.json,
-recovery.json, sbc.json, ppc.json, loco.json, warrant.yaml, estimand.yaml,
-split_half.json, measurements.jsonl, grid_manifest.yaml, plots. Data
-provenance: `data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`.
+`runs/pilot/`: warrant.yaml, run.json, recovery.json, sbc.json, newfam.json,
+ppc.json, loco.json, posterior.nc, posterior_summary.json,
+response_style.json, instruments.json, estimand.yaml, plots.
+`runs/multi/measurements.jsonl`: cross-model judgments. Provenance:
+`data/MANIFEST.yaml`. Pipeline: `scripts/pilot.py`; cross-model evidence:
+`scripts/response_evidence.py`, `scripts/agy_judge.py`.
