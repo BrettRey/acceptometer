@@ -115,6 +115,14 @@ zero-divergence strictness (0.5% gate kept, documented). Rejected in part:
 rev 3. Deferred to v2 with reasons: second (post-cutoff) item source,
 population-transfer test, temporal drift evidence.
 
+2026-08-27 — Sweep completed (glm-4.7-flash, qwen3.8:27b; the background job
+was stopped twice by hand, so qwen3.8:27b scalar has 1 repeat per paraphrase
+— full item coverage, not relaunched). Final seven-judge table: qwen3.8:27b
+(.81 all / .42 band) MATCHES Opus 4.6 (.83/.40); glm-4.7-flash is weakest
+(.61/.07). Within-family scale contrast qwen 8B->27B: .72/.18 -> .81/.42.
+The band stays at roughly half the outside signal for every judge at every
+scale: class-wide, scale-mitigated, unsolved.
+
 2026-08-27 — Cross-model marginal-band result (five judge families; Opus 4.6
 elicited via agy with a quota-safe batched protocol, 18 calls, 0 parse
 failures; batch protocol recorded in the cell identity): aggregate r with

@@ -1,5 +1,5 @@
-# Acceptometer pilot report: Sprouse LI items, six judge models
-<!-- SUMMARY: Final pilot: certificate descriptive_only (contamination + rater-entropy PPC), cross-model contested-band deficit measured across five families incl. Opus 4.6 · status: complete · updated: 2026-08-27 -->
+# Acceptometer pilot report: Sprouse LI items, seven judge models
+<!-- SUMMARY: Final pilot: certificate descriptive_only; contested-band deficit measured across seven judges incl. Opus 4.6, which a local 27B matches · status: complete · updated: 2026-08-27 -->
 
 ## What ran
 
@@ -8,7 +8,7 @@
 (304 participants). Judges: Pythia-160m (exact log-probabilities), qwen3:8b,
 gemma3:12b, mistral-small:24b (local, single-item protocol, 3 paraphrases x 3
 repeats), and Claude Opus 4.6 via agy (batched-20 protocol, 3 passes, 18
-calls, 0 parse failures); glm-4.7-flash and qwen3.8:27b in flight. The joint
+calls, 0 parse failures); glm-4.7-flash and qwen3.8:27b complete (qwen3.8:27b scalar has 1 repeat per paraphrase; its elicitation was stopped early). The joint
 Bayesian fit uses qwen3:8b + Pythia SLOR; the others are descriptive cells.
 
 The full ladder ran gated, stop-at-first-failure: fake-data recovery PASSED;
@@ -50,12 +50,19 @@ contested band (human mean in [3, 5]; 47 of 120 items):
 
 | judge | r all | r band | r outside |
 |---|---|---|---|
-| Claude Opus 4.6 (batched) | **.834** | **.397** | .935 |
+| Claude Opus 4.6 (batched) | **.83** | **.40** | .94 |
+| qwen3.8:27b (local; 3 obs/item) | **.81** | **.42** | .91 |
 | mistral-small 24B | .79 | .24 | .87 |
 | gemma3 12B | .74 | .28 | .85 |
 | qwen3 8B | .72 | .18 | .85 |
+| glm-4.7-flash | .61 | .07 | .71 |
 | Pythia-160m SLOR | .35 | -.18 | .51 |
 | *human split-half ceiling* | *.857* | | |
+
+A local 27B open model (qwen3.8:27b) matches the frontier model on every
+statistic, band included; within the qwen family, scale lifts both numbers
+(8B .72/.18 -> 27B .81/.42) while the band stays at roughly half the
+outside-band signal for every judge, at every scale, on both protocols.
 
 Aggregate performance rises with capability to ceiling-adjacent (Opus .834
 vs .857), and the band lags everywhere: the frontier model carries less than
